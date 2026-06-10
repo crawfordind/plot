@@ -12,10 +12,13 @@ type LocationPanelProps = {
 
 const locationTypes: { value: LocationType; label: string }[] = [
   { value: "farm", label: "Farm" },
-  { value: "bed", label: "Bed" },
+  { value: "field", label: "Field" },
   { value: "zone", label: "Zone" },
   { value: "hoophouse", label: "Hoop house" },
+  { value: "bed", label: "Bed" },
+  { value: "row", label: "Row" },
   { value: "alley", label: "Alley" },
+  { value: "fence", label: "Fence" },
 ];
 
 export default function LocationPanel({

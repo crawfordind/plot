@@ -7,6 +7,7 @@ type MobileHeaderProps = {
   dropMode: boolean;
   onToggleDropMode: () => void;
   onOpenRecords: () => void;
+  onOpenBuilder: () => void;
   onLogout: () => void;
 };
 
@@ -15,6 +16,7 @@ export default function MobileHeader({
   dropMode,
   onToggleDropMode,
   onOpenRecords,
+  onOpenBuilder,
   onLogout,
 }: MobileHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -31,6 +33,14 @@ export default function MobileHeader({
       </div>
 
       <div className="flex items-center gap-1 py-2">
+        <button
+          type="button"
+          onClick={onOpenBuilder}
+          className="touch-target rounded-xl bg-emerald-50 px-3 text-sm font-semibold text-emerald-800"
+        >
+          Build
+        </button>
+
         <button
           type="button"
           onClick={onToggleDropMode}

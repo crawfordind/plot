@@ -10,6 +10,7 @@ export function serializeLocation(row: LocationRow) {
     id: row.id,
     name: row.name,
     type: row.type,
+    parentId: row.parentId,
     geometry: JSON.parse(row.geometry) as GeoJSONGeometry,
     zone: row.zone,
     createdAt: row.createdAt.toISOString(),

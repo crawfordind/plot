@@ -5,12 +5,32 @@ const geoPointSchema = z.object({
   coordinates: z.tuple([z.number(), z.number()]),
 });
 
+const geoLineStringSchema = z.object({
+  type: z.literal("LineString"),
+  coordinates: z.array(z.tuple([z.number(), z.number()])).min(2),
+});
+
 const geoPolygonSchema = z.object({
   type: z.literal("Polygon"),
   coordinates: z.array(z.array(z.tuple([z.number(), z.number()]))).min(1),
 });
 
-export const geometrySchema = z.union([geoPointSchema, geoPolygonSchema]);
+export const geometrySchema = z.union([
+  geoPointSchema,
+  geoLineStringSchema,
+  geoPolygonSchema,
+]);
+
+export const locationTypeEnum = z.enum([
+  "farm",
+  "field",
+  "zone",
+  "hoophouse",
+  "bed",
+  "row",
+  "alley",
+  "fence",
+]);
 
 export const registerSchema = z.object({
   email: z.string().email(),
@@ -25,9 +45,29 @@ export const loginSchema = z.object({
 
 export const createLocationSchema = z.object({
   name: z.string().min(1),
-  type: z.enum(["farm", "bed", "zone", "hoophouse", "alley"]),
+  type: locationTypeEnum,
+  parentId: z.string().optional(),
   geometry: geometrySchema,
   zone: z.string().optional(),
+});
+
+// Batch create for the agentic structure builder. Each node carries a client
+// tempId and an optional parentTempId referring to an earlier node in the list,
+// so a whole farm tree is saved in one request with parent links resolved server-side.
+export const createLocationsBatchSchema = z.object({
+  nodes: z
+    .array(
+      z.object({
+        tempId: z.string().min(1),
+        parentTempId: z.string().nullable().optional(),
+        name: z.string().min(1),
+        type: locationTypeEnum,
+        geometry: geometrySchema,
+        zone: z.string().optional(),
+      }),
+    )
+    .min(1)
+    .max(200),
 });
 
 export const createPlantingSchema = z.object({

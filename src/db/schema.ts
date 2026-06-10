@@ -1,5 +1,12 @@
 import { relations, sql } from "drizzle-orm";
-import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import {
+  type AnySQLiteColumn,
+  index,
+  integer,
+  real,
+  sqliteTable,
+  text,
+} from "drizzle-orm/sqlite-core";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -35,15 +42,22 @@ export const locations = sqliteTable(
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     type: text("type", {
-      enum: ["farm", "bed", "zone", "hoophouse", "alley"],
+      enum: ["farm", "field", "zone", "hoophouse", "bed", "row", "alley", "fence"],
     }).notNull(),
+    // Self-reference so structures nest: farm › hoophouse › bed › row.
+    parentId: text("parent_id").references((): AnySQLiteColumn => locations.id, {
+      onDelete: "cascade",
+    }),
     geometry: text("geometry").notNull(),
     zone: text("zone"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
   },
-  (table) => [index("locations_user_id_idx").on(table.userId)],
+  (table) => [
+    index("locations_user_id_idx").on(table.userId),
+    index("locations_parent_id_idx").on(table.parentId),
+  ],
 );
 
 export const varieties = sqliteTable(
@@ -225,6 +239,12 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
     fields: [locations.userId],
     references: [users.id],
   }),
+  parent: one(locations, {
+    fields: [locations.parentId],
+    references: [locations.id],
+    relationName: "location_parent",
+  }),
+  children: many(locations, { relationName: "location_parent" }),
   plantings: many(plantings),
   events: many(events),
   seasons: many(seasons),
