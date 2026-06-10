@@ -14,6 +14,7 @@ import LocationSidebar from "@/components/map/LocationSidebar";
 import MobileHeader from "@/components/map/MobileHeader";
 import PlantingEditSheet from "@/components/plantings/PlantingEditSheet";
 import PlantingForm from "@/components/plantings/PlantingForm";
+import StructureBuilder from "@/components/structure/StructureBuilder";
 import type { EventRecord, LocationRecord, PlantingRecord } from "@/lib/types";
 
 const PlotMap = dynamic(() => import("@/components/map/PlotMap"), {
@@ -39,6 +40,8 @@ export default function MapShell({ userName }: MapShellProps) {
   const [showRecords, setShowRecords] = useState(false);
   const [showEventForm, setShowEventForm] = useState(false);
   const [showPlantingForm, setShowPlantingForm] = useState(false);
+  const [showBuilder, setShowBuilder] = useState(false);
+  const [mapCenter, setMapCenter] = useState<[number, number] | null>(null);
   const [editingLocation, setEditingLocation] = useState<LocationRecord | null>(null);
   const [editingPlanting, setEditingPlanting] = useState<PlantingRecord | null>(null);
   const [editingEvent, setEditingEvent] = useState<EventRecord | null>(null);
@@ -86,6 +89,7 @@ export default function MapShell({ userName }: MapShellProps) {
     showRecords ||
     showEventForm ||
     showPlantingForm ||
+    showBuilder ||
     !!editingLocation ||
     !!editingPlanting ||
     !!editingEvent;
@@ -118,6 +122,10 @@ export default function MapShell({ userName }: MapShellProps) {
           setLogCollapsed(true);
         }}
         onOpenRecords={() => setShowRecords(true)}
+        onOpenBuilder={() => {
+          setShowBuilder(true);
+          setLogCollapsed(true);
+        }}
         onLogout={handleLogout}
       />
 
@@ -134,6 +142,7 @@ export default function MapShell({ userName }: MapShellProps) {
             setDropMode(false);
             setLogCollapsed(true);
           }}
+          onCenterChange={(lng, lat) => setMapCenter([lng, lat])}
           dropMode={dropMode}
         />
 
@@ -148,11 +157,22 @@ export default function MapShell({ userName }: MapShellProps) {
         />
 
         {locations.length === 0 && !dropMode && !pendingCoords && !overlayOpen && (
-          <div className="pointer-events-none absolute inset-x-0 top-1/4 flex justify-center px-6">
+          <div className="absolute inset-x-0 top-1/4 flex justify-center px-6">
             <div className="max-w-xs rounded-2xl border border-emerald-100 bg-white/95 px-5 py-4 text-center shadow-lg backdrop-blur">
               <p className="text-base font-semibold text-stone-900">Welcome to Plot</p>
               <p className="mt-2 text-sm leading-relaxed text-stone-500">
-                Tap <strong>Pin</strong>, drop a bed on the map, then log by talking at the bottom.
+                Describe your farm in a sentence and we&apos;ll map it — beds, hoop houses,
+                rows and all.
+              </p>
+              <button
+                type="button"
+                onClick={() => setShowBuilder(true)}
+                className="touch-target mt-3 w-full rounded-xl bg-emerald-600 py-2.5 text-sm font-semibold text-white active:bg-emerald-700"
+              >
+                Describe my farm
+              </button>
+              <p className="mt-2 text-xs text-stone-400">
+                or tap <strong>Pin</strong> to drop one spot at a time
               </p>
             </div>
           </div>
@@ -182,6 +202,17 @@ export default function MapShell({ userName }: MapShellProps) {
         onCancel={() => setPendingCoords(null)}
         onCreated={() => handleDataSaved("Location saved. Drop more pins or start logging.")}
       />
+
+      {showBuilder && (
+        <StructureBuilder
+          anchor={mapCenter ? { lng: mapCenter[0], lat: mapCenter[1] } : null}
+          onCreated={(count) => {
+            setShowBuilder(false);
+            handleDataSaved(`Mapped ${count} locations. Tap any one to start logging.`);
+          }}
+          onClose={() => setShowBuilder(false)}
+        />
+      )}
 
       {selectedLocation && (
         <LocationSidebar

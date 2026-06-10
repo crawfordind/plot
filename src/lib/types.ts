@@ -1,4 +1,12 @@
-export type LocationType = "farm" | "bed" | "zone" | "hoophouse" | "alley";
+export type LocationType =
+  | "farm"
+  | "field"
+  | "zone"
+  | "hoophouse"
+  | "bed"
+  | "row"
+  | "alley"
+  | "fence";
 export type PlantType = "crop" | "flower" | "tree" | "breeding_line";
 export type PlantingStatus = "active" | "harvested" | "archived";
 export type EventType =
@@ -17,12 +25,14 @@ export type SeasonStatus = "active" | "closed";
 
 export type GeoJSONGeometry =
   | { type: "Point"; coordinates: [number, number] }
+  | { type: "LineString"; coordinates: [number, number][] }
   | { type: "Polygon"; coordinates: [number, number][][] };
 
 export type LocationRecord = {
   id: string;
   name: string;
   type: LocationType;
+  parentId: string | null;
   geometry: GeoJSONGeometry;
   zone: string | null;
   createdAt: string;

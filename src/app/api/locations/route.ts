@@ -34,6 +34,7 @@ export async function POST(request: Request) {
       userId: user.id,
       name: data.name,
       type: data.type,
+      parentId: data.parentId ?? null,
       geometry: JSON.stringify(data.geometry),
       zone: data.zone ?? null,
     });

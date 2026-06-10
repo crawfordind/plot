@@ -1,3 +1,4 @@
+import { buildLocationPaths } from "@/lib/parse/match";
 import type { PlantingRecord, LocationRecord } from "@/lib/types";
 
 type PromptContext = {
@@ -13,9 +14,13 @@ export function buildParsePrompt(context: PromptContext) {
     ? context.locations.find((l) => l.id === context.selectedLocationId)
     : null;
 
+  const paths = buildLocationPaths(context.locations);
+
   const locationList =
     context.locations.length > 0
-      ? context.locations.map((l) => `- ${l.name} (${l.type})`).join("\n")
+      ? context.locations
+          .map((l) => `- ${paths.get(l.id) ?? l.name} (${l.type})`)
+          .join("\n")
       : "(none yet)";
 
   const plantingList =
@@ -23,7 +28,8 @@ export function buildParsePrompt(context: PromptContext) {
       ? context.plantings
           .map((p) => {
             const loc = context.locations.find((l) => l.id === p.locationId);
-            return `- ${p.commonName}${p.variety ? ` (${p.variety})` : ""} @ ${loc?.name ?? "unknown"}`;
+            const where = loc ? (paths.get(loc.id) ?? loc.name) : "unknown";
+            return `- ${p.commonName}${p.variety ? ` (${p.variety})` : ""} @ ${where}`;
           })
           .join("\n")
       : "(none yet)";

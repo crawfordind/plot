@@ -16,6 +16,28 @@ function scoreMatch(query: string, candidate: string) {
   return matches / qTokens.length;
 }
 
+// Full ancestry path for a location, e.g. "Hoop House 1 Bed 2 Row 1".
+// Lets nested structures with repeated leaf names ("Bed 1") be told apart.
+export function buildLocationPaths(locations: LocationRecord[]): Map<string, string> {
+  const byId = new Map(locations.map((l) => [l.id, l]));
+  const cache = new Map<string, string>();
+
+  function path(location: LocationRecord, seen: Set<string>): string {
+    const cached = cache.get(location.id);
+    if (cached) return cached;
+    const parent = location.parentId ? byId.get(location.parentId) : undefined;
+    const result =
+      parent && !seen.has(parent.id)
+        ? `${path(parent, new Set(seen).add(location.id))} ${location.name}`
+        : location.name;
+    cache.set(location.id, result);
+    return result;
+  }
+
+  for (const location of locations) path(location, new Set());
+  return cache;
+}
+
 export function matchLocation(
   locationName: string | null,
   locations: LocationRecord[],
@@ -28,9 +50,13 @@ export function matchLocation(
 
   if (!locationName) return null;
 
+  const paths = buildLocationPaths(locations);
   let best: { id: string; name: string; score: number } | null = null;
   for (const location of locations) {
-    const score = scoreMatch(locationName, location.name);
+    const score = Math.max(
+      scoreMatch(locationName, location.name),
+      scoreMatch(locationName, paths.get(location.id) ?? location.name),
+    );
     if (!best || score > best.score) {
       best = { id: location.id, name: location.name, score };
     }
