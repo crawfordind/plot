@@ -1,0 +1,19 @@
+{
+  "name": "Plot",
+  "short_name": "Plot",
+  "description": "Map-first plant tracking for growers and breeders",
+  "start_url": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen"],
+  "background_color": "#ecfdf5",
+  "theme_color": "#059669",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
