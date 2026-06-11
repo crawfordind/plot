@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { nanoid } from "nanoid";
@@ -23,6 +23,22 @@ export async function POST(request: Request) {
       idByTemp.set(node.tempId, nanoid());
     }
 
+    // Nodes may instead attach to an existing location via parentId; verify the
+    // user owns each referenced existing parent before linking.
+    const existingParentIds = Array.from(
+      new Set(nodes.map((n) => n.parentId).filter((id): id is string => !!id)),
+    );
+    const ownedExistingParents = new Set<string>();
+    for (const parentId of existingParentIds) {
+      const owned = await db.query.locations.findFirst({
+        where: and(eq(locations.id, parentId), eq(locations.userId, user.id)),
+      });
+      if (!owned) {
+        throw new Error(`Unknown parent reference: ${parentId}`);
+      }
+      ownedExistingParents.add(parentId);
+    }
+
     const values = nodes.map((node) => {
       let parentId: string | null = null;
       if (node.parentTempId) {
@@ -31,6 +47,11 @@ export async function POST(request: Request) {
           throw new Error(`Unknown parent reference: ${node.parentTempId}`);
         }
         parentId = resolved;
+      } else if (node.parentId) {
+        if (!ownedExistingParents.has(node.parentId)) {
+          throw new Error(`Unknown parent reference: ${node.parentId}`);
+        }
+        parentId = node.parentId;
       }
       return {
         id: idByTemp.get(node.tempId)!,

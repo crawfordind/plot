@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import ParseConfirmCard from "@/components/log/ParseConfirmCard";
+import Button from "@/components/ui/Button";
+import Icon from "@/components/ui/Icon";
 import { getSeasonLabel } from "@/lib/coach/season";
 import type { ResolvedParse } from "@/lib/parse/schema";
 import type { LocationRecord, PlantingRecord } from "@/lib/types";
@@ -170,9 +172,12 @@ export default function LogCapture({
         <button
           type="button"
           onClick={() => setCollapsed(false)}
-          className="touch-target my-2 flex w-full items-center justify-between rounded-2xl bg-emerald-600 px-4 py-3 text-left text-white shadow-md active:bg-emerald-700"
+          className="focus-ring touch-target my-2 flex w-full items-center justify-between rounded-2xl bg-emerald-600 px-4 py-3 text-left text-white shadow-md active:bg-emerald-700"
         >
-          <span className="text-base font-semibold">Log something…</span>
+          <span className="flex items-center gap-2 text-base font-semibold">
+            <Icon name="sparkle" size={18} />
+            Log something…
+          </span>
           <span className="text-sm opacity-80">Tap to open</span>
         </button>
       </div>
@@ -191,6 +196,10 @@ export default function LogCapture({
           Minimize
         </button>
       </div>
+      <p className="flex items-center gap-1 text-[11px] text-stone-400">
+        <Icon name="sparkle" size={12} className="text-emerald-500" />
+        Type naturally — Plot sorts out the action, plant, and place.
+      </p>
 
       {clarification && (
         <form
@@ -244,13 +253,16 @@ export default function LogCapture({
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <button
+        <Button
           type="submit"
+          size="lg"
+          fullWidth
+          loading={parsing}
+          leftIcon="sparkle"
           disabled={parsing || !text.trim()}
-          className="touch-target w-full rounded-2xl bg-emerald-600 py-4 text-lg font-semibold text-white shadow-sm active:bg-emerald-700 disabled:opacity-50"
         >
-          {parsing ? "Understanding…" : "Log"}
-        </button>
+          {parsing ? "Understanding…" : "Log it"}
+        </Button>
       </form>
 
       <button

@@ -40,6 +40,9 @@ export async function PATCH(request: Request, { params }: Params) {
         ...(data.plantType !== undefined ? { plantType: data.plantType } : {}),
         ...(data.commonName !== undefined ? { commonName: data.commonName } : {}),
         ...(data.variety !== undefined ? { variety: data.variety ?? null } : {}),
+        ...(data.varietyId !== undefined
+          ? { varietyId: data.varietyId ?? null }
+          : {}),
         ...(data.source !== undefined ? { source: data.source ?? null } : {}),
         ...(data.status !== undefined ? { status: data.status } : {}),
         ...(data.seasonId !== undefined ? { seasonId: data.seasonId ?? null } : {}),

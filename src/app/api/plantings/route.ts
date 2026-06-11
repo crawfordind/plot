@@ -4,7 +4,12 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { plantings } from "@/db/schema";
-import { handleZodError, requireUser } from "@/lib/api";
+import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import {
+  getOwnedPlanting,
+  getOwnedSeason,
+  getOwnedVariety,
+} from "@/lib/ownership";
 import { serializePlanting } from "@/lib/serializers";
 import { createPlantingSchema } from "@/lib/validators";
 
@@ -32,12 +37,28 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     const data = createPlantingSchema.parse(body);
+
+    // Validate FK references up front so a bad id returns 400, not a FK 500.
+    if (data.varietyId && !(await getOwnedVariety(data.varietyId, user.id))) {
+      return jsonError("Unknown variety", 400);
+    }
+    if (data.seasonId && !(await getOwnedSeason(data.seasonId, user.id))) {
+      return jsonError("Unknown season", 400);
+    }
+    if (
+      data.parentPlantingId &&
+      !(await getOwnedPlanting(data.parentPlantingId, user.id))
+    ) {
+      return jsonError("Unknown parent planting", 400);
+    }
+
     const id = nanoid();
 
     await db.insert(plantings).values({
       id,
       userId: user.id,
       locationId: data.locationId,
+      varietyId: data.varietyId ?? null,
       plantType: data.plantType,
       commonName: data.commonName,
       variety: data.variety ?? null,

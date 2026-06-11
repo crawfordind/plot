@@ -23,7 +23,9 @@ export const structureNodeSchema: z.ZodType<StructureNode> = z.lazy(() =>
 );
 
 export const structureSpecSchema = z.object({
-  nodes: z.array(structureNodeSchema).min(1),
+  // Allow an empty list so a too-vague description returns a friendly summary
+  // (the builder shows it as a clarifying prompt) instead of a raw 400.
+  nodes: z.array(structureNodeSchema).default([]),
   // One short line the agent can say back to the grower, e.g. a clarifying note.
   summary: z.string().nullable().optional(),
 });

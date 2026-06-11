@@ -16,21 +16,27 @@ export const eventTypeEnum = z.enum([
 
 export const plantTypeEnum = z.enum(["crop", "flower", "tree", "breeding_line"]);
 
+// Tolerant of a small/cheap LLM omitting keys or returning a wrong-typed value:
+// every field defaults to null when missing and falls back to null on a bad
+// type, so a dropped "amount" or "motherVariety" never 400s a valid log.
+const nstr = () => z.string().nullable().default(null).catch(null);
+const nnum = () => z.number().nullable().default(null).catch(null);
+
 export const llmParseOutputSchema = z.object({
-  type: eventTypeEnum,
-  commonName: z.string().nullable(),
-  variety: z.string().nullable(),
-  plantType: plantTypeEnum.nullable(),
-  locationName: z.string().nullable(),
-  occurredAt: z.string().nullable(),
-  quantity: z.number().nullable(),
-  unit: z.string().nullable(),
-  amount: z.number().nullable(),
-  notes: z.string().nullable(),
-  motherVariety: z.string().nullable(),
-  fatherVariety: z.string().nullable(),
-  clarifyingQuestion: z.string().nullable(),
-  suggestNewPlanting: z.boolean(),
+  type: eventTypeEnum.default("observe").catch("observe"),
+  commonName: nstr(),
+  variety: nstr(),
+  plantType: plantTypeEnum.nullable().default(null).catch(null),
+  locationName: nstr(),
+  occurredAt: nstr(),
+  quantity: nnum(),
+  unit: nstr(),
+  amount: nnum(),
+  notes: nstr(),
+  motherVariety: nstr(),
+  fatherVariety: nstr(),
+  clarifyingQuestion: nstr(),
+  suggestNewPlanting: z.boolean().default(false).catch(false),
 });
 
 export type LlmParseOutput = z.infer<typeof llmParseOutputSchema>;

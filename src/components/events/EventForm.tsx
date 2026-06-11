@@ -1,7 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import LocationField from "@/components/map/LocationField";
+import { useMapInteraction } from "@/components/map/MapInteractionContext";
 import BottomSheet from "@/components/ui/BottomSheet";
+import Button from "@/components/ui/Button";
 import type { EventType, LocationRecord, PlantingRecord } from "@/lib/types";
 
 type EventFormProps = {
@@ -33,9 +36,12 @@ export default function EventForm({
   onSaved,
   onClose,
 }: EventFormProps) {
+  const { picking } = useMapInteraction();
   const [type, setType] = useState<EventType>("observe");
   const [locationId, setLocationId] = useState(defaultLocationId ?? "");
   const [plantingId, setPlantingId] = useState("");
+  const [motherPlantingId, setMotherPlantingId] = useState("");
+  const [fatherPlantingId, setFatherPlantingId] = useState("");
   const [occurredAt, setOccurredAt] = useState(
     new Date().toISOString().slice(0, 16),
   );
@@ -76,6 +82,20 @@ export default function EventForm({
         throw new Error(data.error ?? "Failed to save event");
       }
 
+      // A cross also records a parent×parent entry so it shows in lineage.
+      if (type === "cross" && motherPlantingId && fatherPlantingId) {
+        await fetch("/api/crosses", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            motherPlantingId,
+            fatherPlantingId,
+            occurredAt: new Date(occurredAt).toISOString(),
+            notes: notes || undefined,
+          }),
+        });
+      }
+
       onSaved();
       onClose();
     } catch (err) {
@@ -86,7 +106,7 @@ export default function EventForm({
   }
 
   return (
-    <BottomSheet open onClose={onClose} title="Manual log">
+    <BottomSheet open onClose={onClose} title="Manual log" hidden={picking}>
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="grid grid-cols-2 gap-3">
             <label className="block text-xs font-medium text-stone-600">
@@ -115,24 +135,17 @@ export default function EventForm({
             </label>
           </div>
 
-          <label className="block text-xs font-medium text-stone-600">
-            Location
-            <select
-              value={locationId}
-              onChange={(e) => {
-                setLocationId(e.target.value);
-                setPlantingId("");
-              }}
-              className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
-            >
-              <option value="">— optional —</option>
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <LocationField
+            locations={locations}
+            value={locationId}
+            onChange={(id) => {
+              setLocationId(id);
+              setPlantingId("");
+            }}
+            pickTitle="Tap where this happened"
+            placeholder="— optional —"
+            allowNone
+          />
 
           <label className="block text-xs font-medium text-stone-600">
             Planting
@@ -150,6 +163,43 @@ export default function EventForm({
               ))}
             </select>
           </label>
+
+          {type === "cross" && (
+            <div className="grid grid-cols-2 gap-3 rounded-xl border border-emerald-100 bg-emerald-50/40 p-3">
+              <label className="block text-xs font-medium text-stone-600">
+                Mother (seed)
+                <select
+                  value={motherPlantingId}
+                  onChange={(e) => setMotherPlantingId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
+                >
+                  <option value="">— select —</option>
+                  {plantings.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.commonName}
+                      {p.variety ? ` (${p.variety})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="block text-xs font-medium text-stone-600">
+                Father (pollen)
+                <select
+                  value={fatherPlantingId}
+                  onChange={(e) => setFatherPlantingId(e.target.value)}
+                  className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
+                >
+                  <option value="">— select —</option>
+                  {plantings.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.commonName}
+                      {p.variety ? ` (${p.variety})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+          )}
 
           <div className="grid grid-cols-3 gap-3">
             <label className="block text-xs font-medium text-stone-600">
@@ -196,13 +246,9 @@ export default function EventForm({
 
           {error && <p className="text-xs text-red-600">{error}</p>}
 
-          <button
-            type="submit"
-            disabled={saving}
-            className="touch-target w-full rounded-2xl bg-emerald-600 py-4 text-base font-semibold text-white active:bg-emerald-700 disabled:opacity-50"
-          >
-            {saving ? "Saving…" : "Save log"}
-          </button>
+          <Button type="submit" size="lg" fullWidth loading={saving}>
+            Save log
+          </Button>
         </form>
     </BottomSheet>
   );

@@ -42,7 +42,17 @@ export const locations = sqliteTable(
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     type: text("type", {
-      enum: ["farm", "field", "zone", "hoophouse", "bed", "row", "alley", "fence"],
+      enum: [
+        "farm",
+        "field",
+        "zone",
+        "hoophouse",
+        "bed",
+        "row",
+        "alley",
+        "fence",
+        "paddock",
+      ],
     }).notNull(),
     // Self-reference so structures nest: farm › hoophouse › bed › row.
     parentId: text("parent_id").references((): AnySQLiteColumn => locations.id, {
@@ -220,11 +230,103 @@ export const crosses = sqliteTable(
   (table) => [index("crosses_user_id_idx").on(table.userId)],
 );
 
+// A livestock group (mob/flock/herd) the producer rotates through paddocks.
+// species + headCount + avgWeightLb drive the NRCS forage-animal balance math.
+export const herds = sqliteTable(
+  "herds",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    species: text("species", {
+      enum: ["cattle", "sheep", "goat", "horse", "poultry", "other"],
+    }).notNull(),
+    headCount: integer("head_count").notNull(),
+    avgWeightLb: real("avg_weight_lb").notNull(),
+    // DM intake as % of body weight; null falls back to a per-species default.
+    dmIntakePct: real("dm_intake_pct"),
+    notes: text("notes"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [index("herds_user_id_idx").on(table.userId)],
+);
+
+// 1:1 grazing configuration layered onto a `location` of type "paddock".
+// Keeps the map feature (geometry) in `locations` and the agronomy here.
+export const paddocks = sqliteTable(
+  "paddocks",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    locationId: text("location_id")
+      .notNull()
+      .unique()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    primaryForage: text("primary_forage"),
+    // Acreage override; when null, computed from the location geometry.
+    acres: real("acres"),
+    // Prescribed recovery (rest) target before re-grazing, in days.
+    restTargetDays: integer("rest_target_days"),
+    // Prescribed "start"/"stop" grazing heights (inches), per NRCS 528.
+    startHeightIn: real("start_height_in"),
+    stopHeightIn: real("stop_height_in"),
+    notes: text("notes"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [index("paddocks_user_id_idx").on(table.userId)],
+);
+
+// One row per grazing period: this herd on this paddock from movedInAt to
+// movedOutAt. An open row (movedOutAt null) means the herd is grazing there now.
+// This table IS the NRCS 528 Recordkeeping Worksheet.
+export const grazingEvents = sqliteTable(
+  "grazing_events",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    herdId: text("herd_id")
+      .notNull()
+      .references(() => herds.id, { onDelete: "cascade" }),
+    locationId: text("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    movedInAt: integer("moved_in_at", { mode: "timestamp_ms" }).notNull(),
+    movedOutAt: integer("moved_out_at", { mode: "timestamp_ms" }),
+    // Grazing height (inches) when animals went on / came off.
+    heightInIn: real("height_in_in"),
+    heightOutIn: real("height_out_in"),
+    forageSpecies: text("forage_species"),
+    notes: text("notes"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("grazing_events_user_id_idx").on(table.userId),
+    index("grazing_events_herd_id_idx").on(table.herdId),
+    index("grazing_events_location_id_idx").on(table.locationId),
+    index("grazing_events_moved_in_at_idx").on(table.movedInAt),
+  ],
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   locations: many(locations),
   plantings: many(plantings),
   events: many(events),
+  herds: many(herds),
+  paddocks: many(paddocks),
+  grazingEvents: many(grazingEvents),
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -248,6 +350,11 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
   plantings: many(plantings),
   events: many(events),
   seasons: many(seasons),
+  paddock: one(paddocks, {
+    fields: [locations.id],
+    references: [paddocks.locationId],
+  }),
+  grazingEvents: many(grazingEvents),
 }));
 
 export const plantingsRelations = relations(plantings, ({ one, many }) => ({
@@ -281,6 +388,40 @@ export const eventsRelations = relations(events, ({ one }) => ({
   }),
   location: one(locations, {
     fields: [events.locationId],
+    references: [locations.id],
+  }),
+}));
+
+export const herdsRelations = relations(herds, ({ one, many }) => ({
+  user: one(users, {
+    fields: [herds.userId],
+    references: [users.id],
+  }),
+  grazingEvents: many(grazingEvents),
+}));
+
+export const paddocksRelations = relations(paddocks, ({ one }) => ({
+  user: one(users, {
+    fields: [paddocks.userId],
+    references: [users.id],
+  }),
+  location: one(locations, {
+    fields: [paddocks.locationId],
+    references: [locations.id],
+  }),
+}));
+
+export const grazingEventsRelations = relations(grazingEvents, ({ one }) => ({
+  user: one(users, {
+    fields: [grazingEvents.userId],
+    references: [users.id],
+  }),
+  herd: one(herds, {
+    fields: [grazingEvents.herdId],
+    references: [herds.id],
+  }),
+  location: one(locations, {
+    fields: [grazingEvents.locationId],
     references: [locations.id],
   }),
 }));

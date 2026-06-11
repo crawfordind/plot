@@ -1,5 +1,6 @@
 "use client";
 
+import { useMapInteraction } from "@/components/map/MapInteractionContext";
 import BottomSheet from "@/components/ui/BottomSheet";
 import type { EventRecord, LocationRecord, PlantingRecord } from "@/lib/types";
 
@@ -7,6 +8,7 @@ type LocationSidebarProps = {
   location: LocationRecord;
   plantings: PlantingRecord[];
   events: EventRecord[];
+  hidden?: boolean;
   onEditLocation: () => void;
   onAddPlanting: () => void;
   onEditPlanting: (planting: PlantingRecord) => void;
@@ -14,20 +16,38 @@ type LocationSidebarProps = {
   onClose: () => void;
 };
 
+// A small drag handle; pressing it lifts the asset for drag-to-move.
+function Grip({ onPointerDown }: { onPointerDown: (e: React.PointerEvent) => void }) {
+  return (
+    <span
+      onPointerDown={onPointerDown}
+      role="button"
+      aria-label="Drag to move"
+      className="flex shrink-0 cursor-grab touch-none select-none items-center px-1 text-stone-400 active:cursor-grabbing active:text-emerald-600"
+    >
+      ⠿
+    </span>
+  );
+}
+
 export default function LocationSidebar({
   location,
   plantings,
   events,
+  hidden,
   onEditLocation,
   onAddPlanting,
   onEditPlanting,
   onEditEvent,
   onClose,
 }: LocationSidebarProps) {
+  const { beginDrag, startEditGeometry } = useMapInteraction();
+
   return (
     <BottomSheet
       open
       onClose={onClose}
+      hidden={hidden}
       title={location.name}
       subtitle={`${location.type}${location.zone ? ` · Zone ${location.zone}` : ""}`}
     >
@@ -37,7 +57,14 @@ export default function LocationSidebar({
           onClick={onEditLocation}
           className="touch-target flex-1 rounded-xl border border-stone-200 text-sm font-medium text-stone-700 active:bg-stone-50"
         >
-          Edit location
+          Edit
+        </button>
+        <button
+          type="button"
+          onClick={() => startEditGeometry(location)}
+          className="touch-target flex-1 rounded-xl border border-stone-200 text-sm font-medium text-stone-700 active:bg-stone-50"
+        >
+          Move / resize
         </button>
         <button
           type="button"
@@ -57,11 +84,24 @@ export default function LocationSidebar({
             <li className="py-2 text-sm text-stone-400">None yet — add one above</li>
           ) : (
             plantings.map((planting) => (
-              <li key={planting.id}>
+              <li key={planting.id} className="flex items-center gap-1">
+                <Grip
+                  onPointerDown={(e) =>
+                    beginDrag(
+                      {
+                        kind: "planting",
+                        id: planting.id,
+                        label: planting.commonName,
+                        fromLocationId: planting.locationId,
+                      },
+                      e,
+                    )
+                  }
+                />
                 <button
                   type="button"
                   onClick={() => onEditPlanting(planting)}
-                  className="touch-target w-full rounded-xl px-3 py-3 text-left text-sm text-stone-800 active:bg-stone-50"
+                  className="touch-target min-w-0 flex-1 rounded-xl px-2 py-3 text-left text-sm text-stone-800 active:bg-stone-50"
                 >
                   <span className="font-medium">{planting.commonName}</span>
                   {planting.variety && (
@@ -73,6 +113,11 @@ export default function LocationSidebar({
             ))
           )}
         </ul>
+        {plantings.length > 0 && (
+          <p className="mt-1 px-2 text-[11px] text-stone-400">
+            Drag the ⠿ handle onto another location to move a planting.
+          </p>
+        )}
       </section>
 
       <section className="mt-5 pb-2">
@@ -84,11 +129,24 @@ export default function LocationSidebar({
             <li className="py-2 text-sm text-stone-400">No logs yet — use the bar below</li>
           ) : (
             events.slice(0, 15).map((event) => (
-              <li key={event.id}>
+              <li key={event.id} className="flex items-center gap-1">
+                <Grip
+                  onPointerDown={(e) =>
+                    beginDrag(
+                      {
+                        kind: "event",
+                        id: event.id,
+                        label: event.type.replace("_", " "),
+                        fromLocationId: event.locationId,
+                      },
+                      e,
+                    )
+                  }
+                />
                 <button
                   type="button"
                   onClick={() => onEditEvent(event)}
-                  className="w-full rounded-xl bg-stone-50 px-3 py-3 text-left active:bg-emerald-50"
+                  className="min-w-0 flex-1 rounded-xl bg-stone-50 px-3 py-3 text-left active:bg-emerald-50"
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm font-medium capitalize text-emerald-800">

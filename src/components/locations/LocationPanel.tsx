@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import BottomSheet from "@/components/ui/BottomSheet";
+import Button from "@/components/ui/Button";
+import { Field, Input, Select } from "@/components/ui/Field";
 import type { LocationType } from "@/lib/types";
 
 type LocationPanelProps = {
@@ -76,52 +78,45 @@ export default function LocationPanel({
       title="New location"
       subtitle={`${pendingCoords[1].toFixed(5)}, ${pendingCoords[0].toFixed(5)}`}
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
-        <input
-          required
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="North bed, hoop house 1…"
-          className="w-full rounded-xl border border-stone-200 px-4 py-3 outline-none focus:border-emerald-500"
-        />
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <Field label="Name">
+          <Input
+            required
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="North bed, hoop house 1…"
+          />
+        </Field>
 
         <div className="flex gap-2">
-          <select
-            value={type}
-            onChange={(e) => setType(e.target.value as LocationType)}
-            className="min-h-[48px] flex-1 rounded-xl border border-stone-200 px-3 outline-none focus:border-emerald-500"
-          >
-            {locationTypes.map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <input
-            value={zone}
-            onChange={(e) => setZone(e.target.value)}
-            placeholder="6b"
-            className="w-20 rounded-xl border border-stone-200 px-3 outline-none focus:border-emerald-500"
-          />
+          <Field label="Type" className="flex-1">
+            <Select value={type} onChange={(e) => setType(e.target.value as LocationType)}>
+              {locationTypes.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Zone" className="w-20">
+            <Input value={zone} onChange={(e) => setZone(e.target.value)} placeholder="6b" />
+          </Field>
         </div>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         <div className="flex gap-2 pb-safe">
-          <button
-            type="button"
-            onClick={onCancel}
-            className="touch-target flex-1 rounded-xl border border-stone-200 text-sm font-medium text-stone-600"
-          >
+          <Button variant="secondary" className="flex-1" onClick={onCancel}>
             Cancel
-          </button>
-          <button
+          </Button>
+          <Button
             type="submit"
+            className="flex-1"
+            loading={saving}
             disabled={saving || !name.trim()}
-            className="touch-target flex-1 rounded-xl bg-emerald-600 text-sm font-semibold text-white disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Save pin"}
-          </button>
+            Save pin
+          </Button>
         </div>
       </form>
     </BottomSheet>
