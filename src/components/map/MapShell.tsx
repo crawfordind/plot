@@ -31,6 +31,7 @@ import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import Tour, { type TourHandle } from "@/components/ui/Tour";
 import UndoToast from "@/components/ui/UndoToast";
+import type { GeocodeResult } from "@/lib/geocode";
 import { polygonAreaAcres } from "@/lib/grazing/geo";
 import type { GrazingSnapshot } from "@/lib/grazing/status";
 import type { DragAsset } from "@/lib/map/dnd";
@@ -832,6 +833,24 @@ export default function MapShell({ userName }: MapShellProps) {
     setDrawPoints([]);
   }
 
+  // Pan/zoom the map to an address the user picked in the New Farm sheet. Frame
+  // the bounding box when we have one (a town, a parcel), else fly to the point.
+  function locateAddress(target: GeocodeResult) {
+    const map = mapRef.current;
+    if (!map) return;
+    if (target.bbox) {
+      map.fitBounds(
+        [
+          [target.bbox[0], target.bbox[1]],
+          [target.bbox[2], target.bbox[3]],
+        ],
+        { padding: 60, maxZoom: 18, duration: 800 },
+      );
+    } else {
+      map.flyTo({ center: [target.lng, target.lat], zoom: 16, duration: 800 });
+    }
+  }
+
   // ---- Move an asset (and its children) into another farm ----
 
   async function moveAssetToFarm(location: LocationRecord, targetFarmId: string) {
@@ -1147,6 +1166,7 @@ export default function MapShell({ userName }: MapShellProps) {
         {showNewFarm && (
           <NewFarmSheet
             onStartDraw={startFarmDraw}
+            onLocate={locateAddress}
             onClose={() => setShowNewFarm(false)}
           />
         )}
