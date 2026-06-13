@@ -10,6 +10,7 @@ import {
 } from "@/lib/capture/prepareUpload";
 import {
   formatDistance,
+  orderLocationsByHierarchy,
   rankLocationsByDistance,
   type RankedLocation,
 } from "@/lib/capture/nearest";
@@ -180,6 +181,10 @@ export default function TakePhotoSheet({
   }
 
   const chosen = locations.find((l) => l.id === chosenLocationId) ?? null;
+  // Display the asset list in farm-structure order (parent → child, siblings
+  // grouped), while still showing each one's distance from the nearest ranking.
+  const metersById = new Map(ranked.map((r) => [r.location.id, r.meters]));
+  const ordered = orderLocationsByHierarchy(locations);
 
   return (
     <BottomSheet
@@ -248,13 +253,18 @@ export default function TakePhotoSheet({
               onChange={(e) => setChosenLocationId(e.target.value)}
               className="mt-1 w-full rounded-lg border border-stone-200 bg-white p-2 text-sm"
             >
-              {ranked.length === 0 && <option value="">No assets yet</option>}
-              {ranked.map(({ location, meters }) => (
-                <option key={location.id} value={location.id}>
-                  {location.name} ({location.type})
-                  {meters !== null ? ` · ${formatDistance(meters)}` : ""}
-                </option>
-              ))}
+              {ordered.length === 0 && <option value="">No assets yet</option>}
+              {ordered.map(({ location, depth }) => {
+                const meters = metersById.get(location.id) ?? null;
+                const indent = "  ".repeat(depth);
+                const branch = depth > 0 ? "└ " : "";
+                const dist = meters !== null ? ` · ${formatDistance(meters)}` : "";
+                return (
+                  <option key={location.id} value={location.id}>
+                    {`${indent}${branch}${location.name} (${location.type})${dist}`}
+                  </option>
+                );
+              })}
             </select>
             <p className="mt-1 text-xs text-stone-400">
               {fix && fix.lat !== null

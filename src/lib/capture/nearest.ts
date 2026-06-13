@@ -58,3 +58,42 @@ export function formatDistance(m: number | null): string {
   if (m < 1000) return `${Math.round(m)} m`;
   return `${(m / 1000).toFixed(1)} km`;
 }
+
+export type HierarchyEntry = {
+  location: LocationRecord;
+  // Nesting depth (0 = top-level farm) for indenting the option label.
+  depth: number;
+};
+
+// Order locations the way the farm is structured: depth-first by parent → child,
+// siblings alphabetical, so an asset list reads farm → field → bed → row with
+// children grouped under their parent. A location whose parent isn't in the set
+// (or a parent cycle) is treated as a root so nothing drops out.
+export function orderLocationsByHierarchy(
+  locations: LocationRecord[],
+): HierarchyEntry[] {
+  const ids = new Set(locations.map((l) => l.id));
+  const childrenOf = new Map<string | null, LocationRecord[]>();
+  for (const l of locations) {
+    const parentKey = l.parentId && ids.has(l.parentId) ? l.parentId : null;
+    const bucket = childrenOf.get(parentKey);
+    if (bucket) bucket.push(l);
+    else childrenOf.set(parentKey, [l]);
+  }
+  for (const bucket of childrenOf.values()) {
+    bucket.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  const out: HierarchyEntry[] = [];
+  const seen = new Set<string>();
+  const walk = (parentKey: string | null, depth: number) => {
+    for (const location of childrenOf.get(parentKey) ?? []) {
+      if (seen.has(location.id)) continue;
+      seen.add(location.id);
+      out.push({ location, depth });
+      walk(location.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return out;
+}
