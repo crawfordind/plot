@@ -12,6 +12,7 @@ type MobileHeaderProps = {
   onOpenBuilder: () => void;
   onOpenGrazing: () => void;
   onDrawPaddock: () => void;
+  onOpenWorkspace: () => void;
   onHelp: () => void;
   onLogout: () => void;
 };
@@ -100,6 +101,7 @@ export default function MobileHeader({
   onOpenBuilder,
   onOpenGrazing,
   onDrawPaddock,
+  onOpenWorkspace,
   onHelp,
   onLogout,
 }: MobileHeaderProps) {
@@ -186,6 +188,16 @@ export default function MobileHeader({
               onClick={() => {
                 setMenuOpen(false);
                 onHelp();
+              }}
+            />
+            <div className="my-1 border-t border-stone-100" />
+            <MenuRow
+              icon="users"
+              label="Team & workspace"
+              description="Switch farm, invite people, manage roles"
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenWorkspace();
               }}
             />
             <div className="my-1 border-t border-stone-100" />

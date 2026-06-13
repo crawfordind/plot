@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
 import { paddocks } from "@/db/schema";
-import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import { handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedPaddock } from "@/lib/ownership";
 import { serializePaddock } from "@/lib/serializers";
 import { updatePaddockSchema } from "@/lib/validators";
@@ -11,11 +11,11 @@ import { updatePaddockSchema } from "@/lib/validators";
 type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: Params) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const { id } = await params;
-  const existing = await getOwnedPaddock(id, user.id);
+  const existing = await getOwnedPaddock(id, org.id);
   if (!existing) return jsonError("Paddock not found", 404);
 
   try {
@@ -42,7 +42,7 @@ export async function PATCH(request: Request, { params }: Params) {
       })
       .where(eq(paddocks.id, id));
 
-    const row = await getOwnedPaddock(id, user.id);
+    const row = await getOwnedPaddock(id, org.id);
     return NextResponse.json({ paddock: serializePaddock(row!) });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
@@ -51,11 +51,11 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const { id } = await params;
-  const existing = await getOwnedPaddock(id, user.id);
+  const existing = await getOwnedPaddock(id, org.id);
   if (!existing) return jsonError("Paddock not found", 404);
 
   await db.delete(paddocks).where(eq(paddocks.id, id));

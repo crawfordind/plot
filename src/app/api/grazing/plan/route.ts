@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import { handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { chatCompletion } from "@/lib/openrouter";
 import { computeBalance } from "@/lib/grazing/balance";
 import { buildGrazingPlanPrompt } from "@/lib/grazing/prompt";
@@ -8,8 +8,8 @@ import { planParseSchema } from "@/lib/grazing/schema";
 import { grazingPlanRequestSchema } from "@/lib/validators";
 
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   try {
     const body = await request.json();

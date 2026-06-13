@@ -41,9 +41,18 @@ export type IconName =
   | "sparkle"
   | "clock"
   | "warning"
-  | "cross";
+  | "cross"
+  | "users";
 
 const PATHS: Record<IconName, React.ReactNode> = {
+  users: (
+    <>
+      <circle cx="9" cy="8" r="3.2" />
+      <path d="M3.5 20c0-3 2.5-5 5.5-5s5.5 2 5.5 5" />
+      <path d="M16 5.2A3.2 3.2 0 0 1 16 11" />
+      <path d="M17 15.2c2.3.4 4 2.3 4 4.8" />
+    </>
+  ),
   map: (
     <>
       <path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2-6-2Z" />

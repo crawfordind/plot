@@ -67,9 +67,13 @@ export default function LogCapture({
   }, [selectedLocation]);
 
   useEffect(() => {
+    // Syncs an external starter prompt (tapped from the Coach) into the editor.
+    // This is prop→state sync driven by a parent action, not a render cascade.
     if (!starterText) return;
+    /* eslint-disable react-hooks/set-state-in-effect */
     setText(starterText);
     setCollapsed(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
     onStarterConsumed?.();
   }, [starterText, onStarterConsumed, setCollapsed]);
 

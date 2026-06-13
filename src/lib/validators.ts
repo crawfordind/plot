@@ -1,18 +1,35 @@
 import { z } from "zod";
+import { LOCATION_TYPE_VALUES } from "@/lib/locations/catalog";
+
+// Accepts what clients and the NL parser actually send: full ISO datetimes
+// (with or without timezone) and date-only strings like "2026-06-12".
+// z.string().datetime() is stricter than that and rejected real input.
+const isoDateTime = z
+  .string()
+  .refine((s) => !Number.isNaN(Date.parse(s)), "Invalid date/time");
+
+// A GeoJSON position with real-world bounds. .finite() rejects NaN/±Infinity,
+// and the lng/lat ranges reject garbage coordinates that would otherwise be
+// stored and later break area math and map rendering.
+const lng = z.number().finite().min(-180).max(180);
+const lat = z.number().finite().min(-90).max(90);
+const position = z.tuple([lng, lat]);
 
 const geoPointSchema = z.object({
   type: z.literal("Point"),
-  coordinates: z.tuple([z.number(), z.number()]),
+  coordinates: position,
 });
 
 const geoLineStringSchema = z.object({
   type: z.literal("LineString"),
-  coordinates: z.array(z.tuple([z.number(), z.number()])).min(2),
+  coordinates: z.array(position).min(2),
 });
 
 const geoPolygonSchema = z.object({
   type: z.literal("Polygon"),
-  coordinates: z.array(z.array(z.tuple([z.number(), z.number()]))).min(1),
+  // At least one ring, and each ring needs at least 3 vertices to enclose area
+  // (degenerate 0–2 point rings have no area and crash shoelace/centroid math).
+  coordinates: z.array(z.array(position).min(3)).min(1),
 });
 
 export const geometrySchema = z.union([
@@ -21,17 +38,7 @@ export const geometrySchema = z.union([
   geoPolygonSchema,
 ]);
 
-export const locationTypeEnum = z.enum([
-  "farm",
-  "field",
-  "zone",
-  "hoophouse",
-  "bed",
-  "row",
-  "alley",
-  "fence",
-  "paddock",
-]);
+export const locationTypeEnum = z.enum(LOCATION_TYPE_VALUES);
 
 export const herdSpeciesEnum = z.enum([
   "cattle",
@@ -41,6 +48,30 @@ export const herdSpeciesEnum = z.enum([
   "poultry",
   "other",
 ]);
+
+export const orgRoleEnum = z.enum(["owner", "admin", "member"]);
+
+export const createOrgSchema = z.object({
+  name: z.string().min(1).max(120),
+});
+
+export const renameOrgSchema = z.object({
+  name: z.string().min(1).max(120),
+});
+
+export const switchOrgSchema = z.object({
+  orgId: z.string().min(1),
+});
+
+export const inviteMemberSchema = z.object({
+  email: z.string().email(),
+  // Can't invite someone as owner; owners are promoted explicitly.
+  role: z.enum(["admin", "member"]).default("member"),
+});
+
+export const setRoleSchema = z.object({
+  role: orgRoleEnum,
+});
 
 export const registerSchema = z.object({
   email: z.string().email(),
@@ -96,7 +127,24 @@ export const createPlantingSchema = z.object({
   parentPlantingId: z.string().nullable().optional(),
 });
 
-export const updateLocationSchema = createLocationSchema.partial();
+export const updateLocationSchema = createLocationSchema.partial().extend({
+  // Allow re-parenting (e.g. moving an asset to another farm) and clearing it.
+  parentId: z.string().nullable().optional(),
+});
+
+// Update many location geometries at once. Used when transforming a parent
+// (move/rotate/resize) cascades the same transform onto its child locations.
+export const batchGeometrySchema = z.object({
+  updates: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        geometry: geometrySchema,
+      }),
+    )
+    .min(1)
+    .max(500),
+});
 
 export const createEventSchema = z.object({
   plantingId: z.string().optional(),
@@ -114,7 +162,7 @@ export const createEventSchema = z.object({
     "cost",
     "other",
   ]),
-  occurredAt: z.string().datetime().optional(),
+  occurredAt: isoDateTime.optional(),
   quantity: z.number().optional(),
   unit: z.string().optional(),
   amount: z.number().optional(),
@@ -159,8 +207,8 @@ export const updatePaddockSchema = createPaddockSchema.partial();
 export const createGrazingEventSchema = z.object({
   herdId: z.string().min(1),
   locationId: z.string().min(1),
-  movedInAt: z.string().datetime().optional(),
-  movedOutAt: z.string().datetime().optional(),
+  movedInAt: isoDateTime.optional(),
+  movedOutAt: isoDateTime.optional(),
   heightInIn: z.number().min(0).max(60).optional(),
   heightOutIn: z.number().min(0).max(60).optional(),
   forageSpecies: z.string().optional(),
@@ -171,7 +219,7 @@ export const updateGrazingEventSchema = createGrazingEventSchema
   .partial()
   // Allow explicitly clearing the out-fields when re-opening a period.
   .extend({
-    movedOutAt: z.string().datetime().nullable().optional(),
+    movedOutAt: isoDateTime.nullable().optional(),
     heightOutIn: z.number().min(0).max(60).nullable().optional(),
   });
 
@@ -181,7 +229,7 @@ export const grazingMoveSchema = z.object({
   herdId: z.string().min(1),
   // Omit to record a move OFF pasture (closes the herd's open period).
   toLocationId: z.string().min(1).nullable().optional(),
-  occurredAt: z.string().datetime().optional(),
+  occurredAt: isoDateTime.optional(),
   // Height (in) of the paddock being moved ONTO, at move-in.
   heightInIn: z.number().min(0).max(60).optional(),
   // Height (in) of the paddock being moved OFF, at move-out.
@@ -222,7 +270,7 @@ export const updateVarietySchema = createVarietySchema.partial();
 export const createCrossSchema = z.object({
   motherPlantingId: z.string().min(1),
   fatherPlantingId: z.string().min(1),
-  occurredAt: z.string().datetime().optional(),
+  occurredAt: isoDateTime.optional(),
   resultLineId: z.string().optional(),
   notes: z.string().optional(),
 });
@@ -230,15 +278,15 @@ export const createCrossSchema = z.object({
 export const createSeasonSchema = z.object({
   label: z.string().min(1),
   locationId: z.string().nullable().optional(),
-  startsAt: z.string().datetime(),
-  endsAt: z.string().datetime(),
+  startsAt: isoDateTime,
+  endsAt: isoDateTime,
 });
 
 export const updateSeasonSchema = z.object({
   label: z.string().min(1).optional(),
   locationId: z.string().nullable().optional(),
-  startsAt: z.string().datetime().optional(),
-  endsAt: z.string().datetime().optional(),
+  startsAt: isoDateTime.optional(),
+  endsAt: isoDateTime.optional(),
   status: z.enum(["active", "closed"]).optional(),
   reviewSummary: z.string().nullable().optional(),
 });

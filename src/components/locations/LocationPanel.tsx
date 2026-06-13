@@ -1,30 +1,24 @@
 "use client";
 
 import { useState } from "react";
+import LocationTypePicker from "@/components/locations/LocationTypePicker";
 import BottomSheet from "@/components/ui/BottomSheet";
 import Button from "@/components/ui/Button";
-import { Field, Input, Select } from "@/components/ui/Field";
+import { Field, Input } from "@/components/ui/Field";
+import { locationTypeLabel } from "@/lib/locations/catalog";
 import type { LocationType } from "@/lib/types";
 
 type LocationPanelProps = {
   pendingCoords: [number, number] | null;
+  // Farm under the current viewport — new non-farm pins are placed inside it.
+  defaultParentId: string | null;
   onCancel: () => void;
   onCreated: () => void;
 };
 
-const locationTypes: { value: LocationType; label: string }[] = [
-  { value: "farm", label: "Farm" },
-  { value: "field", label: "Field" },
-  { value: "zone", label: "Zone" },
-  { value: "hoophouse", label: "Hoop house" },
-  { value: "bed", label: "Bed" },
-  { value: "row", label: "Row" },
-  { value: "alley", label: "Alley" },
-  { value: "fence", label: "Fence" },
-];
-
 export default function LocationPanel({
   pendingCoords,
+  defaultParentId,
   onCancel,
   onCreated,
 }: LocationPanelProps) {
@@ -49,6 +43,8 @@ export default function LocationPanel({
           name,
           type,
           zone: zone || undefined,
+          // A new farm is top-level; everything else lands in the current farm.
+          parentId: type === "farm" ? undefined : defaultParentId ?? undefined,
           geometry: {
             type: "Point",
             coordinates: pendingCoords,
@@ -79,24 +75,18 @@ export default function LocationPanel({
       subtitle={`${pendingCoords[1].toFixed(5)}, ${pendingCoords[0].toFixed(5)}`}
     >
       <form onSubmit={handleSubmit} className="space-y-3">
-        <Field label="Name">
-          <Input
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="North bed, hoop house 1…"
-          />
+        <Field label="What is it?">
+          <LocationTypePicker value={type} onChange={setType} />
         </Field>
 
         <div className="flex gap-2">
-          <Field label="Type" className="flex-1">
-            <Select value={type} onChange={(e) => setType(e.target.value as LocationType)}>
-              {locationTypes.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </Select>
+          <Field label="Name" className="flex-1">
+            <Input
+              required
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder={`e.g. ${locationTypeLabel(type)} 1`}
+            />
           </Field>
           <Field label="Zone" className="w-20">
             <Input value={zone} onChange={(e) => setZone(e.target.value)} placeholder="6b" />

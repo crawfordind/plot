@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
 import { varieties } from "@/db/schema";
-import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import { handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedVariety } from "@/lib/ownership";
 import { serializeVariety } from "@/lib/serializers";
 import { updateVarietySchema } from "@/lib/validators";
@@ -11,11 +11,11 @@ import { updateVarietySchema } from "@/lib/validators";
 type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: Params) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const { id } = await params;
-  const existing = await getOwnedVariety(id, user.id);
+  const existing = await getOwnedVariety(id, org.id);
   if (!existing) return jsonError("Variety not found", 404);
 
   try {
@@ -38,7 +38,7 @@ export async function PATCH(request: Request, { params }: Params) {
       })
       .where(eq(varieties.id, id));
 
-    const row = await getOwnedVariety(id, user.id);
+    const row = await getOwnedVariety(id, org.id);
     return NextResponse.json({ variety: serializeVariety(row!) });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
@@ -47,11 +47,11 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const { id } = await params;
-  const existing = await getOwnedVariety(id, user.id);
+  const existing = await getOwnedVariety(id, org.id);
   if (!existing) return jsonError("Variety not found", 404);
 
   await db.delete(varieties).where(eq(varieties.id, id));

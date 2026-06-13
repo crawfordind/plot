@@ -48,3 +48,6 @@ next-env.d.ts
 
 # Local Claude Code settings
 .claude/settings.local.json
+
+# Uploaded attachment files (served via /api/attachments)
+uploads/

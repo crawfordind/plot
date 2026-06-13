@@ -9,6 +9,8 @@ import type { StructureNode, StructureSpec } from "@/lib/structure/schema";
 
 type StructureBuilderProps = {
   anchor: Anchor | null;
+  // Farm under the current viewport — the structure's roots attach to it.
+  parentId: string | null;
   onCreated: (count: number) => void;
   onClose: () => void;
 };
@@ -61,6 +63,7 @@ function TreePreview({ nodes, depth = 0 }: { nodes: StructureNode[]; depth?: num
 
 export default function StructureBuilder({
   anchor,
+  parentId,
   onCreated,
   onClose,
 }: StructureBuilderProps) {
@@ -119,6 +122,8 @@ export default function StructureBuilder({
           nodes: placed.map((node) => ({
             tempId: node.tempId,
             parentTempId: node.parentTempId,
+            // Root nodes (no parent in the spec) attach to the current farm.
+            parentId: node.parentTempId ? undefined : parentId ?? undefined,
             name: node.name,
             type: node.type,
             geometry: node.geometry,

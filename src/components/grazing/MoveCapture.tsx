@@ -312,6 +312,28 @@ export default function MoveCapture({
           >
             Log move
           </Button>
+          {/* Manual fallback: skip the LLM entirely and fill the move in by hand
+              — essential when offline or the parser is unavailable. */}
+          <button
+            type="button"
+            onClick={() =>
+              setResolved({
+                action: "move_in",
+                herdId: herds.length === 1 ? herds[0].id : null,
+                herdName: null,
+                toLocationId: null,
+                toLocationName: null,
+                occurredAt: null,
+                heightInIn: null,
+                heightOutIn: null,
+                forageSpecies: null,
+                notes: null,
+              })
+            }
+            className="focus-ring w-full rounded-lg py-1.5 text-center text-xs font-medium text-stone-500 active:text-stone-700"
+          >
+            Enter move manually
+          </button>
         </form>
       )}
     </div>

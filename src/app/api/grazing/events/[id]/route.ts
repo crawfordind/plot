@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
 import { grazingEvents } from "@/db/schema";
-import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import { handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedGrazingEvent } from "@/lib/ownership";
 import { serializeGrazingEvent } from "@/lib/serializers";
 import { updateGrazingEventSchema } from "@/lib/validators";
@@ -11,11 +11,11 @@ import { updateGrazingEventSchema } from "@/lib/validators";
 type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: Params) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const { id } = await params;
-  const existing = await getOwnedGrazingEvent(id, user.id);
+  const existing = await getOwnedGrazingEvent(id, org.id);
   if (!existing) return jsonError("Grazing record not found", 404);
 
   try {
@@ -44,7 +44,7 @@ export async function PATCH(request: Request, { params }: Params) {
       })
       .where(eq(grazingEvents.id, id));
 
-    const row = await getOwnedGrazingEvent(id, user.id);
+    const row = await getOwnedGrazingEvent(id, org.id);
     return NextResponse.json({ grazingEvent: serializeGrazingEvent(row!) });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
@@ -53,11 +53,11 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const { id } = await params;
-  const existing = await getOwnedGrazingEvent(id, user.id);
+  const existing = await getOwnedGrazingEvent(id, org.id);
   if (!existing) return jsonError("Grazing record not found", 404);
 
   await db.delete(grazingEvents).where(eq(grazingEvents.id, id));

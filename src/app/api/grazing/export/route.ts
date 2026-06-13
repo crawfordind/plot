@@ -1,7 +1,7 @@
 import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { grazingEvents, herds, locations } from "@/db/schema";
-import { requireUser } from "@/lib/api";
+import { requireOrg } from "@/lib/api";
 
 // NRCS Grazing Management (528) Recordkeeping Worksheet columns.
 const HEADERS = [
@@ -29,16 +29,16 @@ function fmtDate(iso: string | null): string {
 }
 
 export async function GET() {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const [eventRows, herdRows, locationRows] = await Promise.all([
     db.query.grazingEvents.findMany({
-      where: eq(grazingEvents.userId, user.id),
+      where: eq(grazingEvents.orgId, org.id),
       orderBy: (table, { asc }) => [asc(table.movedInAt)],
     }),
-    db.query.herds.findMany({ where: eq(herds.userId, user.id) }),
-    db.query.locations.findMany({ where: eq(locations.userId, user.id) }),
+    db.query.herds.findMany({ where: eq(herds.orgId, org.id) }),
+    db.query.locations.findMany({ where: eq(locations.orgId, org.id) }),
   ]);
 
   const herdById = new Map(herdRows.map((h) => [h.id, h]));

@@ -117,6 +117,9 @@ function HerdForm({
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // When a herd has grazing history, the first Delete press asks for an explicit
+  // confirmation showing how many NRCS 528 records would be destroyed.
+  const [confirmCount, setConfirmCount] = useState<number | null>(null);
 
   function pickSpecies(s: HerdSpecies) {
     setSpecies(s);
@@ -154,12 +157,26 @@ function HerdForm({
     }
   }
 
-  async function handleDelete() {
+  async function handleDelete(force = false) {
     if (!herd) return;
     setSaving(true);
+    setError(null);
     try {
-      await fetch(`/api/grazing/herds/${herd.id}`, { method: "DELETE" });
+      const url = `/api/grazing/herds/${herd.id}${force ? "?force=1" : ""}`;
+      const response = await fetch(url, { method: "DELETE" });
+      if (response.status === 409) {
+        // Herd has grazing history — surface the count and require a second tap.
+        const data = await response.json();
+        setConfirmCount(data.grazingEventCount ?? 0);
+        return;
+      }
+      if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.error ?? "Failed to delete herd");
+      }
       onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete herd");
     } finally {
       setSaving(false);
     }
@@ -217,24 +234,59 @@ function HerdForm({
 
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      <div className="flex gap-2">
-        <Button variant="secondary" className="flex-1" onClick={onCancel}>
-          Cancel
-        </Button>
-        {herd && (
-          <Button variant="danger" leftIcon="trash" onClick={handleDelete}>
-            Delete
+      {confirmCount !== null ? (
+        <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+          <p className="text-sm text-red-800">
+            Deleting this herd also removes{" "}
+            <strong>
+              {confirmCount} grazing record{confirmCount === 1 ? "" : "s"}
+            </strong>{" "}
+            — its NRCS 528 history. This can&apos;t be undone.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <Button
+              variant="secondary"
+              className="flex-1"
+              onClick={() => setConfirmCount(null)}
+            >
+              Keep herd
+            </Button>
+            <Button
+              variant="danger"
+              className="flex-1"
+              leftIcon="trash"
+              loading={saving}
+              onClick={() => handleDelete(true)}
+            >
+              Delete anyway
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex gap-2">
+          <Button variant="secondary" className="flex-1" onClick={onCancel}>
+            Cancel
           </Button>
-        )}
-        <Button
-          type="submit"
-          className="flex-[2]"
-          loading={saving}
-          disabled={saving || !headCount || !avgWeightLb}
-        >
-          {herd ? "Save" : "Add herd"}
-        </Button>
-      </div>
+          {herd && (
+            <Button
+              variant="danger"
+              leftIcon="trash"
+              loading={saving}
+              onClick={() => handleDelete(false)}
+            >
+              Delete
+            </Button>
+          )}
+          <Button
+            type="submit"
+            className="flex-[2]"
+            loading={saving}
+            disabled={saving || !headCount || !avgWeightLb}
+          >
+            {herd ? "Save" : "Add herd"}
+          </Button>
+        </div>
+      )}
     </form>
   );
 }

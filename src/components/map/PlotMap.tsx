@@ -1,12 +1,10 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Map, { Layer, NavigationControl, Source } from "react-map-gl/maplibre";
+import Map, { Layer, Marker, NavigationControl, Source } from "react-map-gl/maplibre";
 import type { MapLayerMouseEvent, MapRef } from "react-map-gl/maplibre";
 import type {
   Map as MaplibreMap,
-  MapLayerMouseEvent as MlLayerMouseEvent,
-  MapLayerTouchEvent as MlLayerTouchEvent,
   MapMouseEvent,
   MapTouchEvent,
 } from "maplibre-gl";
@@ -14,14 +12,52 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import Icon from "@/components/ui/Icon";
 import Tooltip from "@/components/ui/Tooltip";
 import { LOCATION_LAYERS, VERTEX_LAYER } from "@/lib/map/dnd";
-import { geometryVertices, moveVertex, pointsToGeometry, translateGeometry } from "@/lib/map/geometry";
+import {
+  geometryBounds,
+  geometryCenter,
+  geometryVertices,
+  pointsToGeometry,
+  rotateGeometry,
+  scaleGeometry,
+  translateGeometry,
+} from "@/lib/map/geometry";
+import { locationTypeEmoji } from "@/lib/locations/catalog";
 import type { GeoJSONGeometry, LocationRecord, PaddockStatus } from "@/lib/types";
 
 export type EditGeometry = { id: string; geometry: GeoJSONGeometry };
+export type ChildGeometry = { id: string; geometry: GeoJSONGeometry };
+
+// Layer ids for the transform gizmo (resize corners + rotate knob).
+const SCALE_LAYER = "edit-scale";
+const ROTATE_LAYER = "edit-rotate";
+const POINT_MOVE_LAYER = "edit-point";
+
+// Satellite basemap: Esri World Imagery raster tiles + a glyph endpoint so the
+// location labels (symbol layers) still render over the imagery.
+const SATELLITE_STYLE = {
+  version: 8,
+  glyphs: "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
+  sources: {
+    satellite: {
+      type: "raster",
+      tiles: [
+        "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+      ],
+      tileSize: 256,
+      maxzoom: 19,
+      attribution: "Imagery © Esri, Maxar, Earthstar Geographics",
+    },
+  },
+  layers: [{ id: "satellite", type: "raster", source: "satellite" }],
+};
 
 type PlotMapProps = {
   locations: LocationRecord[];
+  // The primary subject (drives recenter/flyTo).
   selectedLocationId: string | null;
+  // Every id to render highlighted (a whole group, a drilled child, or several
+  // multi-selected parts). Defaults to just selectedLocationId when omitted.
+  selectedIds?: string[];
   onSelectLocation: (id: string | null) => void;
   onAddPin: (lng: number, lat: number) => void;
   onCenterChange?: (lng: number, lat: number) => void;
@@ -37,9 +73,11 @@ type PlotMapProps = {
   // Draw a new polygon by tapping vertices (parent holds the points).
   drawPoints?: [number, number][] | null;
   onDrawPoint?: (lng: number, lat: number) => void;
-  // Edit an existing geometry by dragging vertices; emits the live draft.
+  // Edit an existing geometry by move/rotate/resize; emits the live drafts.
   editGeometry?: EditGeometry | null;
-  onGeometryChange?: (geometry: GeoJSONGeometry) => void;
+  // Descendant locations that move in relation to the edited parent.
+  editChildren?: ChildGeometry[];
+  onGeometryChange?: (geometry: GeoJSONGeometry, children: ChildGeometry[]) => void;
 };
 
 const { area: AREA_LAYER, line: LINE_LAYER, point: POINT_LAYER } = LOCATION_LAYERS;
@@ -52,6 +90,8 @@ type Feature = {
     id: string;
     name: string;
     type: string;
+    emoji: string;
+    depth: number;
     selected: boolean;
     grazeStatus: string;
     isDrop: boolean;
@@ -106,21 +146,71 @@ function centroidOf(g: GeoJSONGeometry): [number, number] | null {
   return n ? [sx / n, sy / n] : null;
 }
 
-function vertexCollection(geometry: GeoJSONGeometry | null) {
-  const verts = geometry ? geometryVertices(geometry) : [];
+function pointFeatures(
+  coords: { coord: [number, number]; props?: Record<string, unknown> }[],
+) {
   return {
     type: "FeatureCollection" as const,
-    features: verts.map((c, idx) => ({
+    features: coords.map(({ coord, props }) => ({
       type: "Feature" as const,
-      properties: { idx },
-      geometry: { type: "Point" as const, coordinates: c },
+      properties: props ?? {},
+      geometry: { type: "Point" as const, coordinates: coord },
     })),
+  };
+}
+
+function vertexCollection(geometry: GeoJSONGeometry | null) {
+  const verts = geometry ? geometryVertices(geometry) : [];
+  return pointFeatures(verts.map((c, idx) => ({ coord: c, props: { idx } })));
+}
+
+// A single GeoJSON Feature wrapping a geometry (for the edited parent draft).
+function parentFeatureData(g: GeoJSONGeometry) {
+  return { type: "Feature" as const, properties: {}, geometry: g };
+}
+
+// A FeatureCollection of the children that move along with the parent.
+function childCollectionData(children: ChildGeometry[]) {
+  return {
+    type: "FeatureCollection" as const,
+    features: children.map((c) => ({
+      type: "Feature" as const,
+      properties: {},
+      geometry: c.geometry,
+    })),
+  };
+}
+
+// Bounding box + resize/rotate handle geometries derived from a draft geometry.
+// Returns null for points (which only support move).
+function gizmoData(g: GeoJSONGeometry | null) {
+  if (!g || g.type === "Point") return null;
+  const b = geometryBounds([g]);
+  if (!b) return null;
+  const [[minLng, minLat], [maxLng, maxLat]] = b;
+  const h = maxLat - minLat;
+  const offset = Math.max(h * 0.3, 0.0002);
+  const topMid: [number, number] = [(minLng + maxLng) / 2, maxLat];
+  const rotKnob: [number, number] = [topMid[0], maxLat + offset];
+  const corners: [number, number][] = [
+    [minLng, minLat],
+    [maxLng, minLat],
+    [maxLng, maxLat],
+    [minLng, maxLat],
+  ];
+  const bboxRing: [number, number][] = [...corners, corners[0]];
+  return {
+    bbox: parentFeatureData({ type: "Polygon", coordinates: [bboxRing] }),
+    rotLine: parentFeatureData({ type: "LineString", coordinates: [topMid, rotKnob] }),
+    corners: pointFeatures(corners.map((coord) => ({ coord }))),
+    rotKnob: pointFeatures([{ coord: rotKnob }]),
   };
 }
 
 export default function PlotMap({
   locations,
   selectedLocationId,
+  selectedIds,
   onSelectLocation,
   onAddPin,
   onCenterChange,
@@ -133,6 +223,7 @@ export default function PlotMap({
   drawPoints,
   onDrawPoint,
   editGeometry,
+  editChildren,
   onGeometryChange,
 }: PlotMapProps) {
   const mapRef = useRef<MapRef | null>(null);
@@ -147,28 +238,43 @@ export default function PlotMap({
   // using the "adjust state during render" pattern (no effect needed).
   const [draft, setDraft] = useState<GeoJSONGeometry | null>(null);
   const draftRef = useRef<GeoJSONGeometry | null>(null);
+  const [childDrafts, setChildDrafts] = useState<ChildGeometry[]>([]);
+  const childDraftsRef = useRef<ChildGeometry[]>([]);
   const [seedId, setSeedId] = useState<string | null>(null);
   const editing = !!editGeometry;
+
+  // The set of ids rendered highlighted. Falls back to the single subject.
+  const selectedIdSet = useMemo(
+    () => new Set(selectedIds ?? (selectedLocationId ? [selectedLocationId] : [])),
+    [selectedIds, selectedLocationId],
+  );
 
   const currentEditId = editGeometry?.id ?? null;
   if (currentEditId !== seedId) {
     setSeedId(currentEditId);
     setDraft(editGeometry?.geometry ?? null);
+    setChildDrafts(editChildren ?? []);
   }
 
-  // Keep a ref copy of the draft so the imperative drag handlers read the latest.
+  // Keep ref copies so the imperative drag handlers read the latest drafts.
+  // (Refs are synced in effects, never during render.)
   useEffect(() => {
     draftRef.current = draft;
   }, [draft]);
+  useEffect(() => {
+    childDraftsRef.current = childDrafts;
+  }, [childDrafts]);
 
-  const applyDraft = useCallback(
-    (g: GeoJSONGeometry) => {
-      draftRef.current = g;
-      setDraft(g);
-      onGeometryChange?.(g);
-    },
-    [onGeometryChange],
+  // Latest drafts produced during a drag (committed to React state on pointer-up).
+  const latestRef = useRef<{ parent: GeoJSONGeometry; children: ChildGeometry[] } | null>(
+    null,
   );
+  // Keep the change callback in a ref so the gizmo effect doesn't re-bind handlers
+  // on every parent render (which would make dragging janky).
+  const onGeometryChangeRef = useRef(onGeometryChange);
+  useEffect(() => {
+    onGeometryChangeRef.current = onGeometryChange;
+  }, [onGeometryChange]);
 
   const centeredRef = useRef(false);
   const mapReadyRef = useRef(false);
@@ -210,10 +316,18 @@ export default function PlotMap({
     if (locations.length > 0) fitToData();
   }, [locations, fitToData]);
 
-  // Recenter when a location is selected (e.g. tapped in Records).
+  // Recenter when the selected subject *changes* (e.g. tapped in Records). Keyed
+  // off a ref of the last-flown id so a background data refresh (new `locations`
+  // identity) doesn't yank the camera back while the user is panning around.
+  const lastFlownRef = useRef<string | null>(null);
   useEffect(() => {
     const map = mapRef.current?.getMap();
-    if (!map || !selectedLocationId) return;
+    if (!map || !selectedLocationId) {
+      lastFlownRef.current = selectedLocationId ?? null;
+      return;
+    }
+    if (lastFlownRef.current === selectedLocationId) return;
+    lastFlownRef.current = selectedLocationId;
     const loc = locations.find((l) => l.id === selectedLocationId);
     if (!loc) return;
     const c = centroidOf(loc.geometry);
@@ -222,86 +336,199 @@ export default function PlotMap({
     }
   }, [selectedLocationId, locations]);
 
-  // Vertex / fill dragging for geometry edit mode. Attached imperatively to the
-  // maplibre map so it works the same on touch and mouse.
+  // Transform gizmo: move (drag body), resize (drag a corner), rotate (drag the
+  // knob). All three move the whole object — and any child locations — together.
+  // The drag updates the map sources IMPERATIVELY (no React re-render per frame),
+  // committing to state only on pointer-up, so dragging stays smooth. A single
+  // mousedown hit-test picks the mode deterministically (rotate > resize > move).
   useEffect(() => {
     const map = mapRef.current?.getMap();
     if (!map || !editing) return;
 
-    let dragIdx: number | null = null;
-    let translateStart: { lng: number; lat: number } | null = null;
+    type Gesture = {
+      mode: "move" | "scale" | "rotate";
+      center: [number, number];
+      cosLat: number;
+      startParent: GeoJSONGeometry;
+      startChildren: ChildGeometry[];
+      startLng: number;
+      startLat: number;
+      startAngle: number;
+      startDist: number;
+    };
+    let gesture: Gesture | null = null;
 
     const setCursor = (c: string) => {
       map.getCanvas().style.cursor = c;
     };
 
-    const onVertexDown = (e: MlLayerMouseEvent | MlLayerTouchEvent) => {
-      const feat = e.features?.[0];
-      if (!feat) return;
-      e.preventDefault();
-      dragIdx = Number(feat.properties?.idx ?? -1);
-      map.dragPan.disable();
-      setCursor("grabbing");
+    const getGeo = (id: string) =>
+      map.getLayer(id) || map.getSource(id)
+        ? (map.getSource(id) as unknown as { setData: (d: unknown) => void } | undefined)
+        : undefined;
+
+    // Push the live drafts straight to the map sources (the smooth path).
+    const paint = (parent: GeoJSONGeometry, children: ChildGeometry[]) => {
+      getGeo("edit-src")?.setData(parentFeatureData(parent));
+      getGeo("edit-children")?.setData(childCollectionData(children));
+      const gz = gizmoData(parent);
+      if (gz) {
+        getGeo("edit-bbox")?.setData(gz.bbox);
+        getGeo("edit-rotate-line")?.setData(gz.rotLine);
+        getGeo("edit-scale-src")?.setData(gz.corners);
+        getGeo("edit-rotate-src")?.setData(gz.rotKnob);
+      }
+      latestRef.current = { parent, children };
     };
 
-    const onFillDown = (e: MlLayerMouseEvent | MlLayerTouchEvent) => {
-      // Only translate when not grabbing a vertex.
-      if (dragIdx != null) return;
+    const onDown = (e: MapMouseEvent | MapTouchEvent) => {
+      if (gesture) return;
+      const present = (ids: string[]) => ids.filter((id) => map.getLayer(id));
+      const handleLayers = present([ROTATE_LAYER, SCALE_LAYER]);
+      const moveLayers = present(["edit-fill", "edit-outline", POINT_MOVE_LAYER]);
+
+      const hits = handleLayers.length
+        ? map.queryRenderedFeatures(e.point, { layers: handleLayers })
+        : [];
+      let mode: Gesture["mode"] | null = null;
+      if (hits.some((f) => f.layer.id === ROTATE_LAYER)) mode = "rotate";
+      else if (hits.some((f) => f.layer.id === SCALE_LAYER)) mode = "scale";
+      else if (
+        moveLayers.length &&
+        map.queryRenderedFeatures(e.point, { layers: moveLayers }).length
+      ) {
+        mode = "move";
+      }
+      if (!mode) return; // empty space → let the map pan normally
+
+      const parent = draftRef.current;
+      if (!parent) return;
       e.preventDefault();
-      translateStart = { lng: e.lngLat.lng, lat: e.lngLat.lat };
+      const center = geometryCenter(parent);
+      const cosLat = Math.cos((center[1] * Math.PI) / 180) || 1;
+      const dx = (e.lngLat.lng - center[0]) * cosLat;
+      const dy = e.lngLat.lat - center[1];
+      gesture = {
+        mode,
+        center,
+        cosLat,
+        startParent: parent,
+        startChildren: childDraftsRef.current.map((c) => ({ ...c })),
+        startLng: e.lngLat.lng,
+        startLat: e.lngLat.lat,
+        startAngle: Math.atan2(dy, dx),
+        startDist: Math.hypot(dx, dy),
+      };
       map.dragPan.disable();
       setCursor("grabbing");
     };
 
     const onMove = (e: MapMouseEvent | MapTouchEvent) => {
-      const g = draftRef.current;
-      if (!g) return;
-      if (dragIdx != null && dragIdx >= 0) {
-        applyDraft(moveVertex(g, dragIdx, e.lngLat.lng, e.lngLat.lat));
-      } else if (translateStart) {
-        const dLng = e.lngLat.lng - translateStart.lng;
-        const dLat = e.lngLat.lat - translateStart.lat;
-        translateStart = { lng: e.lngLat.lng, lat: e.lngLat.lat };
-        applyDraft(translateGeometry(g, dLng, dLat));
+      if (!gesture) return;
+      const { mode, center, cosLat, startParent, startChildren } = gesture;
+
+      if (mode === "move") {
+        const dLng = e.lngLat.lng - gesture.startLng;
+        const dLat = e.lngLat.lat - gesture.startLat;
+        paint(
+          translateGeometry(startParent, dLng, dLat),
+          startChildren.map((c) => ({
+            id: c.id,
+            geometry: translateGeometry(c.geometry, dLng, dLat),
+          })),
+        );
+        return;
       }
+
+      const dx = (e.lngLat.lng - center[0]) * cosLat;
+      const dy = e.lngLat.lat - center[1];
+
+      if (mode === "scale") {
+        const dist = Math.hypot(dx, dy);
+        const factor =
+          gesture.startDist > 1e-9 ? Math.max(dist / gesture.startDist, 0.05) : 1;
+        paint(
+          scaleGeometry(startParent, factor, center),
+          startChildren.map((c) => ({
+            id: c.id,
+            geometry: scaleGeometry(c.geometry, factor, center),
+          })),
+        );
+        return;
+      }
+
+      // rotate
+      const deg = ((Math.atan2(dy, dx) - gesture.startAngle) * 180) / Math.PI;
+      paint(
+        rotateGeometry(startParent, deg, center),
+        startChildren.map((c) => ({
+          id: c.id,
+          geometry: rotateGeometry(c.geometry, deg, center),
+        })),
+      );
     };
 
     const onUp = () => {
-      if (dragIdx == null && !translateStart) return;
-      dragIdx = null;
-      translateStart = null;
+      if (!gesture) return;
+      gesture = null;
       map.dragPan.enable();
       setCursor("");
+      const latest = latestRef.current;
+      latestRef.current = null;
+      if (latest) {
+        // Commit once — refreshes React state and notifies the parent.
+        draftRef.current = latest.parent;
+        childDraftsRef.current = latest.children;
+        setDraft(latest.parent);
+        setChildDrafts(latest.children);
+        onGeometryChangeRef.current?.(latest.parent, latest.children);
+      }
     };
 
-    map.on("mousedown", VERTEX_LAYER, onVertexDown);
-    map.on("touchstart", VERTEX_LAYER, onVertexDown);
-    map.on("mousedown", "edit-fill", onFillDown);
-    map.on("touchstart", "edit-fill", onFillDown);
+    map.on("mousedown", onDown);
+    map.on("touchstart", onDown);
     map.on("mousemove", onMove);
     map.on("touchmove", onMove);
     map.on("mouseup", onUp);
     map.on("touchend", onUp);
 
     return () => {
-      map.off("mousedown", VERTEX_LAYER, onVertexDown);
-      map.off("touchstart", VERTEX_LAYER, onVertexDown);
-      map.off("mousedown", "edit-fill", onFillDown);
-      map.off("touchstart", "edit-fill", onFillDown);
+      map.off("mousedown", onDown);
+      map.off("touchstart", onDown);
       map.off("mousemove", onMove);
       map.off("touchmove", onMove);
       map.off("mouseup", onUp);
       map.off("touchend", onUp);
       map.dragPan.enable();
     };
-  }, [editing, applyDraft]);
+  }, [editing]);
 
   const { areaLineCollection, pointCollection } = useMemo(() => {
     const areaLine: Feature[] = [];
     const points: Feature[] = [];
+    const hiddenIds = new Set<string>(
+      editGeometry ? [editGeometry.id, ...childDrafts.map((c) => c.id)] : [],
+    );
+    // Hierarchy depth (farm=0, field=1, bed=2, …) so a click over nested
+    // polygons can prefer the deepest/most-specific feature instead of the
+    // farm that contains everything. Cycle-guarded against bad parent data.
+    // Plain object, not a Map() — "Map" here is the react-map-gl component.
+    const parentById: Record<string, string | null> = {};
+    for (const l of locations) parentById[l.id] = l.parentId;
+    const depthOf = (id: string) => {
+      let depth = 0;
+      let cursor: string | null = parentById[id] ?? null;
+      const seen = new Set<string>();
+      while (cursor && !seen.has(cursor)) {
+        seen.add(cursor);
+        depth += 1;
+        cursor = parentById[cursor] ?? null;
+      }
+      return depth;
+    };
     for (const location of locations) {
-      // Hide the feature being edited; the draft layer renders it instead.
-      if (editGeometry && location.id === editGeometry.id) continue;
+      // Hide features being edited; the draft layers render them instead.
+      if (hiddenIds.has(location.id)) continue;
       const feature: Feature = {
         type: "Feature",
         id: location.id,
@@ -309,7 +536,9 @@ export default function PlotMap({
           id: location.id,
           name: location.name,
           type: location.type,
-          selected: location.id === selectedLocationId,
+          emoji: locationTypeEmoji(location.type),
+          depth: depthOf(location.id),
+          selected: selectedIdSet.has(location.id),
           grazeStatus: grazingStatus?.[location.id] ?? "",
           isDrop: location.id === dropTargetId,
         },
@@ -322,7 +551,12 @@ export default function PlotMap({
       areaLineCollection: { type: "FeatureCollection" as const, features: areaLine },
       pointCollection: { type: "FeatureCollection" as const, features: points },
     };
-  }, [locations, selectedLocationId, grazingStatus, dropTargetId, editGeometry]);
+  }, [locations, selectedIdSet, grazingStatus, dropTargetId, editGeometry, childDrafts]);
+
+  // Live geometry for the children that move along with the edited parent, and
+  // the bbox + resize/rotate handles — same shapes the drag handlers push.
+  const childCollection = useMemo(() => childCollectionData(childDrafts), [childDrafts]);
+  const gizmo = useMemo(() => (editing ? gizmoData(draft) : null), [editing, draft]);
 
   const drawGeometry = useMemo(
     () => (drawPoints && drawPoints.length ? pointsToGeometry(drawPoints) : null),
@@ -335,12 +569,21 @@ export default function PlotMap({
         onDrawPoint?.(event.lngLat.lng, event.lngLat.lat);
         return;
       }
-      if (editing) return; // edits happen via vertex drags
+      if (editing) return; // edits happen via gizmo drags
       if (dropMode) {
         onAddPin(event.lngLat.lng, event.lngLat.lat);
         return;
       }
-      const hit = event.features?.find((f) => f.properties?.id);
+      // A click over nested polygons (a bed inside a field inside a farm)
+      // returns every overlapping feature. Prefer the deepest one in the
+      // hierarchy so the child is selected, not the farm that contains it.
+      const candidates = (event.features ?? []).filter((f) => f.properties?.id);
+      let hit: (typeof candidates)[number] | null = null;
+      for (const f of candidates) {
+        if (!hit || (f.properties.depth ?? 0) > (hit.properties.depth ?? 0)) {
+          hit = f;
+        }
+      }
       if (pickMode) {
         if (hit) onLocationPick?.(hit.properties!.id as string);
         return;
@@ -423,7 +666,7 @@ export default function PlotMap({
           else centerOnGps();
         }}
         interactiveLayerIds={INTERACTIVE}
-        mapStyle="https://tiles.openfreemap.org/styles/liberty"
+        mapStyle={SATELLITE_STYLE as unknown as string}
         style={{ width: "100%", height: "100%" }}
         cursor={cursor}
         attributionControl={false}
@@ -488,14 +731,16 @@ export default function PlotMap({
               "text-allow-overlap": false,
             }}
             paint={{
-              "text-color": "#1c1917",
-              "text-halo-color": "#ffffff",
-              "text-halo-width": 1.4,
+              "text-color": "#ffffff",
+              "text-halo-color": "#14532d",
+              "text-halo-width": 1.6,
             }}
           />
         </Source>
 
         <Source id="loc-points" type="geojson" data={pointCollection}>
+          {/* A white "puck" behind each emoji marker. Also the click/hit-test
+              target for selecting a pin (the emoji markers are pointer-events:none). */}
           <Layer
             id={POINT_LAYER}
             type="circle"
@@ -503,14 +748,21 @@ export default function PlotMap({
               "circle-radius": [
                 "case",
                 ["get", "isDrop"],
-                11,
+                16,
                 ["get", "selected"],
-                9,
-                pickActive ? 8 : 7,
+                15,
+                pickActive ? 14 : 13,
               ] as unknown as number,
-              "circle-color": ["case", ["get", "isDrop"], "#065f46", "#10b981"] as unknown as string,
-              "circle-stroke-color": ["case", ["get", "selected"], "#064e3b", "#ffffff"],
-              "circle-stroke-width": 3,
+              "circle-color": ["case", ["get", "isDrop"], "#d1fae5", "#ffffff"] as unknown as string,
+              "circle-stroke-color": [
+                "case",
+                ["get", "selected"],
+                "#064e3b",
+                ["get", "isDrop"],
+                "#065f46",
+                "#10b981",
+              ] as unknown as string,
+              "circle-stroke-width": ["case", ["get", "selected"], 3, 2] as unknown as number,
             }}
           />
           <Layer
@@ -519,21 +771,77 @@ export default function PlotMap({
             layout={{
               "text-field": ["get", "name"],
               "text-size": 11,
-              "text-offset": [0, 1.2],
+              "text-offset": [0, 1.7],
               "text-anchor": "top",
               "text-allow-overlap": false,
             }}
             paint={{
-              "text-color": "#1c1917",
-              "text-halo-color": "#ffffff",
-              "text-halo-width": 1.4,
+              "text-color": "#ffffff",
+              "text-halo-color": "#14532d",
+              "text-halo-width": 1.6,
             }}
           />
         </Source>
 
-        {/* Draft geometry being edited (fill + outline + draggable vertices). */}
+        {/* Emoji glyphs for each pin. Rendered as HTML markers because MapLibre's
+            SDF text layers can't render colour emoji. pointer-events:none keeps the
+            white puck below as the click/drag target so selection still works. */}
+        {pointCollection.features.map((f) => {
+          const [lng, lat] = (f.geometry as { coordinates: [number, number] })
+            .coordinates;
+          return (
+            <Marker
+              key={f.properties.id}
+              longitude={lng}
+              latitude={lat}
+              anchor="center"
+              style={{ pointerEvents: "none" }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  fontSize: f.properties.selected ? 19 : 16,
+                  lineHeight: 1,
+                  filter: "drop-shadow(0 1px 1px rgba(0,0,0,0.35))",
+                }}
+              >
+                {f.properties.emoji}
+              </span>
+            </Marker>
+          );
+        })}
+
+        {/* Children that move in relation to the edited parent (faint preview). */}
+        {editing && childDrafts.length > 0 && (
+          <Source id="edit-children" type="geojson" data={childCollection}>
+            <Layer
+              id="edit-children-fill"
+              type="fill"
+              filter={["==", ["geometry-type"], "Polygon"]}
+              paint={{ "fill-color": "#10b981", "fill-opacity": 0.18 }}
+            />
+            <Layer
+              id="edit-children-line"
+              type="line"
+              paint={{ "line-color": "#047857", "line-width": 1.5, "line-opacity": 0.8 }}
+            />
+            <Layer
+              id="edit-children-point"
+              type="circle"
+              filter={["==", ["geometry-type"], "Point"]}
+              paint={{
+                "circle-radius": 5,
+                "circle-color": "#10b981",
+                "circle-stroke-color": "#ffffff",
+                "circle-stroke-width": 2,
+              }}
+            />
+          </Source>
+        )}
+
+        {/* Draft geometry being edited (fill + outline + a point-move handle). */}
         {editing && draft && (
-          <Source id="edit-src" type="geojson" data={{ type: "Feature", properties: {}, geometry: draft }}>
+          <Source id="edit-src" type="geojson" data={parentFeatureData(draft)}>
             {draft.type === "Polygon" && (
               <Layer
                 id="edit-fill"
@@ -541,26 +849,75 @@ export default function PlotMap({
                 paint={{ "fill-color": "#10b981", "fill-opacity": 0.35 }}
               />
             )}
-            <Layer
-              id="edit-outline"
-              type="line"
-              paint={{ "line-color": "#065f46", "line-width": 2.5 }}
-            />
+            {draft.type !== "Point" && (
+              <Layer
+                id="edit-outline"
+                type="line"
+                paint={{ "line-color": "#065f46", "line-width": 2.5 }}
+              />
+            )}
+            {draft.type === "Point" && (
+              <Layer
+                id={POINT_MOVE_LAYER}
+                type="circle"
+                paint={{
+                  "circle-radius": 11,
+                  "circle-color": "#10b981",
+                  "circle-stroke-color": "#065f46",
+                  "circle-stroke-width": 3,
+                }}
+              />
+            )}
           </Source>
         )}
-        {editing && draft && (
-          <Source id="edit-verts" type="geojson" data={vertexCollection(draft)}>
-            <Layer
-              id={VERTEX_LAYER}
-              type="circle"
-              paint={{
-                "circle-radius": 9,
-                "circle-color": "#ffffff",
-                "circle-stroke-color": "#065f46",
-                "circle-stroke-width": 3,
-              }}
-            />
-          </Source>
+
+        {/* Transform gizmo: dashed bbox, rotate arm + knob, corner resize handles. */}
+        {editing && gizmo && (
+          <>
+            <Source id="edit-bbox" type="geojson" data={gizmo.bbox}>
+              <Layer
+                id="edit-bbox-line"
+                type="line"
+                paint={{
+                  "line-color": "#ecfccb",
+                  "line-width": 1.5,
+                  "line-dasharray": [2, 2],
+                  "line-opacity": 0.8,
+                }}
+              />
+            </Source>
+            <Source id="edit-rotate-line" type="geojson" data={gizmo.rotLine}>
+              <Layer
+                id="edit-rotate-arm"
+                type="line"
+                paint={{ "line-color": "#ecfccb", "line-width": 1.5, "line-opacity": 0.85 }}
+              />
+            </Source>
+            <Source id="edit-scale-src" type="geojson" data={gizmo.corners}>
+              <Layer
+                id={SCALE_LAYER}
+                type="circle"
+                paint={{
+                  "circle-radius": 8,
+                  "circle-color": "#ffffff",
+                  "circle-stroke-color": "#065f46",
+                  "circle-stroke-width": 3,
+                }}
+              />
+            </Source>
+            <Source id="edit-rotate-src" type="geojson" data={gizmo.rotKnob}>
+              <Layer
+                id={ROTATE_LAYER}
+                type="circle"
+                paint={{
+                  "circle-radius": 9,
+                  "circle-color": "#065f46",
+                  "circle-stroke-color": "#ffffff",
+                  "circle-stroke-width": 3,
+                }}
+              />
+            </Source>
+          </>
         )}
 
         {/* In-progress drawing preview. */}
@@ -577,7 +934,7 @@ export default function PlotMap({
         {drawPoints && drawPoints.length > 0 && (
           <Source id="draw-verts" type="geojson" data={vertexCollection(pointsToGeometry(drawPoints))}>
             <Layer
-              id="draw-vertex"
+              id={VERTEX_LAYER}
               type="circle"
               paint={{
                 "circle-radius": 6,

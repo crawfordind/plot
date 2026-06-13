@@ -1,13 +1,6 @@
-export type LocationType =
-  | "farm"
-  | "field"
-  | "zone"
-  | "hoophouse"
-  | "bed"
-  | "row"
-  | "alley"
-  | "fence"
-  | "paddock";
+import type { LocationType } from "@/lib/locations/catalog";
+
+export type { LocationType };
 export type PlantType = "crop" | "flower" | "tree" | "breeding_line";
 export type PlantingStatus = "active" | "harvested" | "archived";
 export type EventType =
@@ -37,6 +30,44 @@ export type LocationRecord = {
   geometry: GeoJSONGeometry;
   zone: string | null;
   createdAt: string;
+};
+
+export type OrgRole = "owner" | "admin" | "member";
+
+export type OrganizationRecord = {
+  id: string;
+  name: string;
+  role: OrgRole;
+};
+
+export type MemberRecord = {
+  userId: string;
+  email: string;
+  name: string | null;
+  role: OrgRole;
+  isYou: boolean;
+};
+
+export type PendingInviteRecord = {
+  id: string;
+  email: string;
+  role: OrgRole;
+  createdAt: string;
+};
+
+export type AttachmentKind = "image" | "video" | "document" | "other";
+
+export type AttachmentRecord = {
+  id: string;
+  locationId: string;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  kind: AttachmentKind;
+  caption: string | null;
+  createdAt: string;
+  // Convenience URL the client uses to load/download the file.
+  url: string;
 };
 
 export type PlantingRecord = {

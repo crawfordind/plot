@@ -4,13 +4,14 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { events } from "@/db/schema";
-import { handleZodError, requireUser } from "@/lib/api";
+import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { findUnownedRef } from "@/lib/ownership";
 import { serializeEvent } from "@/lib/serializers";
 import { createEventSchema } from "@/lib/validators";
 
 export async function GET(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const { searchParams } = new URL(request.url);
   const locationId = searchParams.get("locationId");
@@ -18,7 +19,7 @@ export async function GET(request: Request) {
 
   const rows = await db.query.events.findMany({
     where: (table, { and, eq: eqFn }) => {
-      const clauses = [eqFn(table.userId, user.id)];
+      const clauses = [eqFn(table.orgId, org.id)];
       if (locationId) clauses.push(eqFn(table.locationId, locationId));
       if (plantingId) clauses.push(eqFn(table.plantingId, plantingId));
       return and(...clauses);
@@ -30,17 +31,25 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { user, org, response } = await requireOrg();
+  if (!org) return response!;
 
   try {
     const body = await request.json();
     const data = createEventSchema.parse(body);
+
+    const badRef = await findUnownedRef(org.id, {
+      locationId: data.locationId,
+      plantingId: data.plantingId,
+    });
+    if (badRef) return jsonError(`Unknown ${badRef}`, 400);
+
     const id = nanoid();
     const occurredAt = data.occurredAt ? new Date(data.occurredAt) : new Date();
 
     await db.insert(events).values({
       id,
+      orgId: org.id,
       userId: user.id,
       plantingId: data.plantingId ?? null,
       locationId: data.locationId ?? null,

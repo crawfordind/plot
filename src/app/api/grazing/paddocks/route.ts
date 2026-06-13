@@ -4,31 +4,31 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { paddocks } from "@/db/schema";
-import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import { handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedLocation } from "@/lib/ownership";
 import { serializePaddock } from "@/lib/serializers";
 import { createPaddockSchema } from "@/lib/validators";
 
 export async function GET() {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const rows = await db.query.paddocks.findMany({
-    where: eq(paddocks.userId, user.id),
+    where: eq(paddocks.orgId, org.id),
   });
   return NextResponse.json({ paddocks: rows.map(serializePaddock) });
 }
 
 // Upsert grazing config for a location (one config per paddock location).
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { user, org, response } = await requireOrg();
+  if (!org) return response!;
 
   try {
     const body = await request.json();
     const data = createPaddockSchema.parse(body);
 
-    const location = await getOwnedLocation(data.locationId, user.id);
+    const location = await getOwnedLocation(data.locationId, org.id);
     if (!location) return jsonError("Location not found", 404);
 
     const fields = {
@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     const existing = await db.query.paddocks.findFirst({
       where: and(
         eq(paddocks.locationId, data.locationId),
-        eq(paddocks.userId, user.id),
+        eq(paddocks.orgId, org.id),
       ),
     });
 
@@ -55,6 +55,7 @@ export async function POST(request: Request) {
       id = nanoid();
       await db.insert(paddocks).values({
         id,
+        orgId: org.id,
         userId: user.id,
         locationId: data.locationId,
         ...fields,

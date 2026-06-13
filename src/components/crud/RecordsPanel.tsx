@@ -9,6 +9,7 @@ import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import { Input } from "@/components/ui/Field";
 import SegmentedControl from "@/components/ui/SegmentedControl";
+import { locationTypeEmoji, locationTypeLabel } from "@/lib/locations/catalog";
 import type {
   CrossRecord,
   EventRecord,
@@ -155,7 +156,9 @@ export default function RecordsPanel({
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="font-medium text-stone-900">{location.name}</span>
-                      <span className="text-xs capitalize text-stone-400">{location.type}</span>
+                      <span className="text-xs text-stone-400">
+                        {locationTypeEmoji(location.type)} {locationTypeLabel(location.type)}
+                      </span>
                     </div>
                   </button>
                 </li>

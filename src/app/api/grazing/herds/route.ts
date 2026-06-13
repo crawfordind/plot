@@ -4,24 +4,24 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { herds } from "@/db/schema";
-import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import { handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { serializeHerd } from "@/lib/serializers";
 import { createHerdSchema } from "@/lib/validators";
 
 export async function GET() {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const rows = await db.query.herds.findMany({
-    where: eq(herds.userId, user.id),
+    where: eq(herds.orgId, org.id),
     orderBy: (table, { asc }) => [asc(table.createdAt)],
   });
   return NextResponse.json({ herds: rows.map(serializeHerd) });
 }
 
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { user, org, response } = await requireOrg();
+  if (!org) return response!;
 
   try {
     const body = await request.json();
@@ -30,6 +30,7 @@ export async function POST(request: Request) {
     const id = nanoid();
     await db.insert(herds).values({
       id,
+      orgId: org.id,
       userId: user.id,
       name: data.name,
       species: data.species,

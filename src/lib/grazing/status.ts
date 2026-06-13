@@ -45,6 +45,12 @@ export type GrazingSnapshot = {
   advisories: GrazingAdvisory[];
 };
 
+// When a paddock has no configured rest target, fall back to this for the
+// resting/ready decision so a paddock that stock just came off doesn't read
+// "ready" the very next day. The configured target (possibly null) is still
+// returned for display; this only drives the status color.
+const DEFAULT_REST_TARGET_DAYS = 30;
+
 function startOfDay(date: Date) {
   const d = new Date(date);
   d.setHours(0, 0, 0, 0);
@@ -98,10 +104,8 @@ export function buildGrazingSnapshot(
         status = "idle"; // never grazed → fully rested
       } else {
         restDays = daysBetween(now, new Date(lastClosed.movedOutAt!));
-        status =
-          restTargetDays != null && restDays < restTargetDays
-            ? "resting"
-            : "ready";
+        const effectiveTarget = restTargetDays ?? DEFAULT_REST_TARGET_DAYS;
+        status = restDays < effectiveTarget ? "resting" : "ready";
       }
     }
 

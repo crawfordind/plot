@@ -1,9 +1,9 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
-import { herds } from "@/db/schema";
-import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import { grazingEvents, herds } from "@/db/schema";
+import { handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedHerd } from "@/lib/ownership";
 import { serializeHerd } from "@/lib/serializers";
 import { updateHerdSchema } from "@/lib/validators";
@@ -11,11 +11,11 @@ import { updateHerdSchema } from "@/lib/validators";
 type Params = { params: Promise<{ id: string }> };
 
 export async function PATCH(request: Request, { params }: Params) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const { id } = await params;
-  const existing = await getOwnedHerd(id, user.id);
+  const existing = await getOwnedHerd(id, org.id);
   if (!existing) return jsonError("Herd not found", 404);
 
   try {
@@ -38,7 +38,7 @@ export async function PATCH(request: Request, { params }: Params) {
       })
       .where(eq(herds.id, id));
 
-    const row = await getOwnedHerd(id, user.id);
+    const row = await getOwnedHerd(id, org.id);
     return NextResponse.json({ herd: serializeHerd(row!) });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
@@ -46,13 +46,37 @@ export async function PATCH(request: Request, { params }: Params) {
   }
 }
 
-export async function DELETE(_request: Request, { params }: Params) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+export async function DELETE(request: Request, { params }: Params) {
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const { id } = await params;
-  const existing = await getOwnedHerd(id, user.id);
+  const existing = await getOwnedHerd(id, org.id);
   if (!existing) return jsonError("Herd not found", 404);
+
+  // Deleting a herd cascade-deletes its grazing_events — the NRCS 528 record of
+  // every move this herd ever made. Refuse unless the caller has confirmed by
+  // passing ?force=1, and report how many records would be lost so the UI can
+  // warn the user before they destroy compliance history.
+  const force = new URL(request.url).searchParams.get("force") === "1";
+  if (!force) {
+    const history = await db.query.grazingEvents.findMany({
+      where: and(
+        eq(grazingEvents.herdId, id),
+        eq(grazingEvents.orgId, org.id),
+      ),
+      columns: { id: true },
+    });
+    if (history.length > 0) {
+      return NextResponse.json(
+        {
+          error: "confirm_required",
+          grazingEventCount: history.length,
+        },
+        { status: 409 },
+      );
+    }
+  }
 
   await db.delete(herds).where(eq(herds.id, id));
   return NextResponse.json({ ok: true });

@@ -17,8 +17,11 @@ export type MapInteraction = {
   requestPick: (opts: PickOptions) => Promise<string | null>;
   // Begin dragging an asset token. Call from a grip's onPointerDown.
   beginDrag: (asset: DragAsset, e: React.PointerEvent) => void;
-  // Enter geometry-edit mode for a location (resize paddock / move pin).
+  // Enter geometry-edit mode for a single location (resize paddock / move pin).
   startEditGeometry: (location: LocationRecord) => void;
+  // Enter geometry-edit mode for one or more locations at once. A single id edits
+  // it directly; several transform together around a synthetic bounding box.
+  startEditTargets: (ids: string[]) => void;
   // Enter draw-a-paddock mode.
   startDrawPaddock: () => void;
 };

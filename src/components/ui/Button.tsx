@@ -43,11 +43,15 @@ export default function Button({
   disabled,
   className = "",
   children,
+  type,
   ...props
 }: ButtonProps) {
   return (
     <button
       {...props}
+      // Default to "button" so Cancel/Delete controls inside a <form> don't
+      // implicitly submit it. Submit buttons must opt in with type="submit".
+      type={type ?? "button"}
       disabled={disabled || loading}
       className={`focus-ring inline-flex items-center justify-center font-semibold transition-colors disabled:opacity-50 ${
         VARIANTS[variant]

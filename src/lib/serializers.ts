@@ -1,5 +1,6 @@
 import type { GeoJSONGeometry } from "@/lib/types";
 import type {
+  attachments,
   crosses,
   events,
   grazingEvents,
@@ -12,6 +13,7 @@ import type {
 } from "@/db/schema";
 
 type LocationRow = typeof locations.$inferSelect;
+type AttachmentRow = typeof attachments.$inferSelect;
 type PlantingRow = typeof plantings.$inferSelect;
 type EventRow = typeof events.$inferSelect;
 type HerdRow = typeof herds.$inferSelect;
@@ -30,6 +32,20 @@ export function serializeLocation(row: LocationRow) {
     geometry: JSON.parse(row.geometry) as GeoJSONGeometry,
     zone: row.zone,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function serializeAttachment(row: AttachmentRow) {
+  return {
+    id: row.id,
+    locationId: row.locationId,
+    fileName: row.fileName,
+    mimeType: row.mimeType,
+    sizeBytes: row.sizeBytes,
+    kind: row.kind,
+    caption: row.caption,
+    createdAt: row.createdAt.toISOString(),
+    url: `/api/attachments/${row.id}/file`,
   };
 }
 

@@ -4,37 +4,38 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { seasons } from "@/db/schema";
-import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import { handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedLocation } from "@/lib/ownership";
 import { serializeSeason } from "@/lib/serializers";
 import { createSeasonSchema } from "@/lib/validators";
 
 export async function GET() {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const rows = await db.query.seasons.findMany({
-    where: eq(seasons.userId, user.id),
+    where: eq(seasons.orgId, org.id),
     orderBy: (table, { desc }) => [desc(table.startsAt)],
   });
   return NextResponse.json({ seasons: rows.map(serializeSeason) });
 }
 
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { user, org, response } = await requireOrg();
+  if (!org) return response!;
 
   try {
     const body = await request.json();
     const data = createSeasonSchema.parse(body);
 
-    if (data.locationId && !(await getOwnedLocation(data.locationId, user.id))) {
+    if (data.locationId && !(await getOwnedLocation(data.locationId, org.id))) {
       return jsonError("Unknown location", 400);
     }
 
     const id = nanoid();
     await db.insert(seasons).values({
       id,
+      orgId: org.id,
       userId: user.id,
       locationId: data.locationId ?? null,
       label: data.label,

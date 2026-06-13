@@ -9,7 +9,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const data = registerSchema.parse(body);
     const user = await createUser(data.email, data.password, data.name);
-    await createSession(user.id);
+    await createSession(user.id, user.orgId);
 
     return NextResponse.json({ user });
   } catch (error) {

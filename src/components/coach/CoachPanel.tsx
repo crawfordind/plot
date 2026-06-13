@@ -34,7 +34,8 @@ export default function CoachPanel({
   if (!coach || hidden) return null;
 
   return (
-    <div className="absolute left-3 right-14 top-3 z-10">
+    // Sits below the FarmBar pill (also pinned top-left) so the two don't overlap.
+    <div className="absolute left-3 right-14 top-16 z-10">
       <button
         type="button"
         onClick={() => setExpanded((v) => !v)}

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
 import { grazingEvents, herds, locations } from "@/db/schema";
-import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import { handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { chatCompletion } from "@/lib/openrouter";
 import { buildGrazingMovePrompt } from "@/lib/grazing/prompt";
 import { moveParseSchema } from "@/lib/grazing/schema";
@@ -31,24 +31,24 @@ function matchByName<T extends { id: string; name: string }>(
 }
 
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   try {
     const body = await request.json();
     const data = grazingParseRequestSchema.parse(body);
 
     const [herdRows, locationRows, openRows] = await Promise.all([
-      db.query.herds.findMany({ where: eq(herds.userId, user.id) }),
+      db.query.herds.findMany({ where: eq(herds.orgId, org.id) }),
       db.query.locations.findMany({
         where: and(
-          eq(locations.userId, user.id),
+          eq(locations.orgId, org.id),
           eq(locations.type, "paddock"),
         ),
       }),
       db.query.grazingEvents.findMany({
         where: and(
-          eq(grazingEvents.userId, user.id),
+          eq(grazingEvents.orgId, org.id),
           isNull(grazingEvents.movedOutAt),
         ),
       }),

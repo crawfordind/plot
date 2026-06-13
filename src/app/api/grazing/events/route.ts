@@ -4,33 +4,33 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { grazingEvents } from "@/db/schema";
-import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import { handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedHerd, getOwnedLocation } from "@/lib/ownership";
 import { serializeGrazingEvent } from "@/lib/serializers";
 import { createGrazingEventSchema } from "@/lib/validators";
 
 export async function GET() {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const rows = await db.query.grazingEvents.findMany({
-    where: eq(grazingEvents.userId, user.id),
+    where: eq(grazingEvents.orgId, org.id),
     orderBy: (table, { desc }) => [desc(table.movedInAt)],
   });
   return NextResponse.json({ grazingEvents: rows.map(serializeGrazingEvent) });
 }
 
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { user, org, response } = await requireOrg();
+  if (!org) return response!;
 
   try {
     const body = await request.json();
     const data = createGrazingEventSchema.parse(body);
 
     const [herd, location] = await Promise.all([
-      getOwnedHerd(data.herdId, user.id),
-      getOwnedLocation(data.locationId, user.id),
+      getOwnedHerd(data.herdId, org.id),
+      getOwnedLocation(data.locationId, org.id),
     ]);
     if (!herd) return jsonError("Herd not found", 404);
     if (!location) return jsonError("Paddock not found", 404);
@@ -38,6 +38,7 @@ export async function POST(request: Request) {
     const id = nanoid();
     await db.insert(grazingEvents).values({
       id,
+      orgId: org.id,
       userId: user.id,
       herdId: data.herdId,
       locationId: data.locationId,
