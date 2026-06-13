@@ -5,6 +5,10 @@ import BottomSheet from "@/components/ui/BottomSheet";
 import PhotoInsightView from "@/components/locations/PhotoInsightView";
 import { getCurrentFix, type CaptureFix } from "@/lib/capture/geo";
 import {
+  mergeCaptureGeo,
+  prepareImageForUpload,
+} from "@/lib/capture/prepareUpload";
+import {
   formatDistance,
   rankLocationsByDistance,
   type RankedLocation,
@@ -50,6 +54,11 @@ export default function TakePhotoSheet({
   const [savedId, setSavedId] = useState<string | null>(null);
   const [insight, setInsight] = useState<PhotoInsightRecord | null>(null);
   const [analyzeFailed, setAnalyzeFailed] = useState<string | null>(null);
+  const [resultGeo, setResultGeo] = useState<{
+    lat: number | null;
+    lng: number | null;
+    heading: number | null;
+  } | null>(null);
 
   const cameraRef = useRef<HTMLInputElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
@@ -67,6 +76,7 @@ export default function TakePhotoSheet({
     setSavedId(null);
     setInsight(null);
     setAnalyzeFailed(null);
+    setResultGeo(null);
   }
 
   function close() {
@@ -131,21 +141,30 @@ export default function TakePhotoSheet({
     setPhase("saving");
     setError(null);
     try {
+      // Downscale + re-encode so the upload stays under the platform size limit,
+      // recovering EXIF geo before the canvas strips it.
+      const prepared = await prepareImageForUpload(file);
+      const geo = mergeCaptureGeo(fix, prepared.exif, source !== "upload");
+      setResultGeo({ lat: geo.lat, lng: geo.lng, heading: geo.heading });
+
       const form = new FormData();
-      form.append("file", file);
+      form.append("file", prepared.file);
       form.append("locationId", chosenLocationId);
       form.append("source", source);
-      if (fix) {
-        if (fix.lat !== null) form.append("lat", String(fix.lat));
-        if (fix.lng !== null) form.append("lng", String(fix.lng));
-        if (fix.accuracy !== null) form.append("gpsAccuracy", String(fix.accuracy));
-        if (fix.heading !== null) form.append("heading", String(fix.heading));
-        form.append("capturedAt", String(Date.now()));
-      }
+      if (geo.lat !== null) form.append("lat", String(geo.lat));
+      if (geo.lng !== null) form.append("lng", String(geo.lng));
+      if (geo.accuracy !== null) form.append("gpsAccuracy", String(geo.accuracy));
+      if (geo.heading !== null) form.append("heading", String(geo.heading));
+      if (geo.capturedAt !== null) form.append("capturedAt", String(geo.capturedAt));
       if (note.trim()) form.append("userContext", note.trim());
 
       const res = await fetch("/api/attachments", { method: "POST", body: form });
       if (!res.ok) {
+        if (res.status === 413) {
+          throw new Error(
+            "That photo is too large to upload, even after resizing.",
+          );
+        }
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error ?? "Upload failed");
       }
@@ -304,14 +323,7 @@ export default function TakePhotoSheet({
               analyzing={!insight && !analyzeFailed}
               error={analyzeFailed}
               geo={
-                fix
-                  ? {
-                      lat: fix.lat,
-                      lng: fix.lng,
-                      heading: fix.heading,
-                      placeLabel: null,
-                    }
-                  : undefined
+                resultGeo ? { ...resultGeo, placeLabel: null } : undefined
               }
               onRetry={savedId ? () => analyze(savedId) : undefined}
             />

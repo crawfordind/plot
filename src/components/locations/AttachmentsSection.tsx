@@ -2,6 +2,10 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentFix } from "@/lib/capture/geo";
+import {
+  mergeCaptureGeo,
+  prepareImageForUpload,
+} from "@/lib/capture/prepareUpload";
 import PhotoInsightView, {
   SUBJECT_LABEL,
 } from "@/components/locations/PhotoInsightView";
@@ -113,27 +117,36 @@ export default function AttachmentsSection({
     setError(null);
 
     const fix = source === "asset_camera" ? await getCurrentFix() : null;
+    const live = source !== "upload";
 
     const newImageIds: string[] = [];
     try {
-      for (const file of Array.from(fileList)) {
+      for (const original of Array.from(fileList)) {
+        // Downscale + re-encode images client-side (and recover EXIF geo) so big
+        // phone photos stay under the platform's upload size limit.
+        const prepared = await prepareImageForUpload(original);
+        const geo = mergeCaptureGeo(fix, prepared.exif, live);
         const form = new FormData();
-        form.append("file", file);
+        form.append("file", prepared.file);
         form.append("locationId", locationId);
         form.append("source", source);
-        if (fix) {
-          if (fix.lat !== null) form.append("lat", String(fix.lat));
-          if (fix.lng !== null) form.append("lng", String(fix.lng));
-          if (fix.accuracy !== null)
-            form.append("gpsAccuracy", String(fix.accuracy));
-          if (fix.heading !== null) form.append("heading", String(fix.heading));
-          form.append("capturedAt", String(Date.now()));
-        }
+        if (geo.lat !== null) form.append("lat", String(geo.lat));
+        if (geo.lng !== null) form.append("lng", String(geo.lng));
+        if (geo.accuracy !== null)
+          form.append("gpsAccuracy", String(geo.accuracy));
+        if (geo.heading !== null) form.append("heading", String(geo.heading));
+        if (geo.capturedAt !== null)
+          form.append("capturedAt", String(geo.capturedAt));
         const res = await fetch("/api/attachments", {
           method: "POST",
           body: form,
         });
         if (!res.ok) {
+          if (res.status === 413) {
+            throw new Error(
+              "That file is too large to upload, even after resizing.",
+            );
+          }
           const data = await res.json().catch(() => ({}));
           throw new Error(data.error ?? "Upload failed");
         }
