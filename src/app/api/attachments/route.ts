@@ -69,7 +69,10 @@ export async function POST(request: Request) {
 
   try {
     await saveAttachmentFile(storedName, bytes);
-  } catch {
+  } catch (error) {
+    // Surface the underlying object-store error (e.g. an R2/S3 403) in the
+    // server logs — otherwise a storage misconfig hides behind a blank 500.
+    console.error("Attachment upload to object storage failed:", error);
     return jsonError("Couldn't store the file", 500);
   }
 

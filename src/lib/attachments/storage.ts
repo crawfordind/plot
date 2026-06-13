@@ -41,6 +41,13 @@ function getClient(): S3Client {
       accessKeyId: process.env.S3_ACCESS_KEY_ID ?? "",
       secretAccessKey: process.env.S3_SECRET_ACCESS_KEY ?? "",
     },
+    // The AWS SDK now defaults to "WHEN_SUPPORTED", which adds a CRC32 checksum
+    // and an aws-chunked streaming-trailer payload to every PutObject. Cloudflare
+    // R2 (and most S3-compatible stores) reject that signed request — uploads
+    // fail with a 403 on the PUT. Only send checksums when an operation requires
+    // one, which restores R2 compatibility while keeping real S3 working.
+    requestChecksumCalculation: "WHEN_REQUIRED",
+    responseChecksumValidation: "WHEN_REQUIRED",
   });
   return client;
 }
