@@ -30,16 +30,23 @@ function getBucket(): string {
 
 // Lazy singleton so importing this module doesn't require S3 config at build time
 // (only when an attachment is actually read/written).
+// Trim env credentials — values pasted into a hosting dashboard (Vercel, etc.)
+// commonly pick up a trailing newline or surrounding quotes, which silently
+// corrupts the SigV4 HMAC and yields a confusing "SignatureDoesNotMatch" 403.
+function cleanEnv(value: string | undefined): string {
+  return (value ?? "").trim().replace(/^['"]|['"]$/g, "");
+}
+
 let client: S3Client | null = null;
 function getClient(): S3Client {
   if (client) return client;
   client = new S3Client({
-    region: process.env.S3_REGION ?? "auto",
-    endpoint: process.env.S3_ENDPOINT || undefined,
+    region: cleanEnv(process.env.S3_REGION) || "auto",
+    endpoint: cleanEnv(process.env.S3_ENDPOINT) || undefined,
     forcePathStyle: process.env.S3_FORCE_PATH_STYLE === "true",
     credentials: {
-      accessKeyId: process.env.S3_ACCESS_KEY_ID ?? "",
-      secretAccessKey: process.env.S3_SECRET_ACCESS_KEY ?? "",
+      accessKeyId: cleanEnv(process.env.S3_ACCESS_KEY_ID),
+      secretAccessKey: cleanEnv(process.env.S3_SECRET_ACCESS_KEY),
     },
     // The AWS SDK now defaults to "WHEN_SUPPORTED", which adds a CRC32 checksum
     // and an aws-chunked streaming-trailer payload to every PutObject. Cloudflare
