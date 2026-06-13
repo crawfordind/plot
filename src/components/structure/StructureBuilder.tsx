@@ -2,11 +2,15 @@
 
 import { useState } from "react";
 import BottomSheet from "@/components/ui/BottomSheet";
+import Button from "@/components/ui/Button";
+import { Textarea } from "@/components/ui/Field";
 import { layoutStructure, type Anchor } from "@/lib/structure/layout";
 import type { StructureNode, StructureSpec } from "@/lib/structure/schema";
 
 type StructureBuilderProps = {
   anchor: Anchor | null;
+  // Farm under the current viewport — the structure's roots attach to it.
+  parentId: string | null;
   onCreated: (count: number) => void;
   onClose: () => void;
 };
@@ -59,6 +63,7 @@ function TreePreview({ nodes, depth = 0 }: { nodes: StructureNode[]; depth?: num
 
 export default function StructureBuilder({
   anchor,
+  parentId,
   onCreated,
   onClose,
 }: StructureBuilderProps) {
@@ -117,6 +122,8 @@ export default function StructureBuilder({
           nodes: placed.map((node) => ({
             tempId: node.tempId,
             parentTempId: node.parentTempId,
+            // Root nodes (no parent in the spec) attach to the current farm.
+            parentId: node.parentTempId ? undefined : parentId ?? undefined,
             name: node.name,
             type: node.type,
             geometry: node.geometry,
@@ -143,13 +150,12 @@ export default function StructureBuilder({
     >
       {!spec ? (
         <form onSubmit={handleParse} className="space-y-3">
-          <textarea
+          <Textarea
             autoFocus
             value={text}
             onChange={(e) => setText(e.target.value)}
             rows={3}
             placeholder="e.g. two hoop houses, two beds in each, two rows per bed"
-            className="w-full resize-none rounded-2xl border border-stone-200 px-4 py-3 outline-none focus:border-emerald-500"
           />
 
           <div className="flex flex-wrap gap-2">
@@ -167,13 +173,16 @@ export default function StructureBuilder({
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 
-          <button
+          <Button
             type="submit"
+            size="lg"
+            fullWidth
+            leftIcon="sparkle"
+            loading={parsing}
             disabled={parsing || !text.trim()}
-            className="touch-target w-full rounded-2xl bg-emerald-600 py-4 text-base font-semibold text-white active:bg-emerald-700 disabled:opacity-50"
           >
-            {parsing ? "Reading…" : "Build my farm"}
-          </button>
+            Build my farm
+          </Button>
         </form>
       ) : (
         <div className="space-y-4">
@@ -193,24 +202,25 @@ export default function StructureBuilder({
           {error && <p className="text-sm text-red-600">{error}</p>}
 
           <div className="flex gap-2 pb-safe">
-            <button
-              type="button"
+            <Button
+              variant="secondary"
+              className="flex-1"
               onClick={() => {
                 setSpec(null);
                 setError(null);
               }}
-              className="touch-target flex-1 rounded-2xl border border-stone-200 text-sm font-medium text-stone-600"
             >
               Edit description
-            </button>
-            <button
-              type="button"
+            </Button>
+            <Button
+              size="lg"
+              className="flex-[2]"
+              leftIcon="mapPin"
+              loading={placing}
               onClick={handlePlace}
-              disabled={placing}
-              className="touch-target flex-[2] rounded-2xl bg-emerald-600 text-base font-semibold text-white active:bg-emerald-700 disabled:opacity-50"
             >
-              {placing ? "Placing…" : "Place on map"}
-            </button>
+              Place on map
+            </Button>
           </div>
         </div>
       )}

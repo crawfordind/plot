@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import Button from "@/components/ui/Button";
+import { Field, Input } from "@/components/ui/Field";
+import Icon from "@/components/ui/Icon";
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -40,52 +43,52 @@ export default function RegisterPage() {
 
   return (
     <div className="flex min-h-[100dvh] flex-1 items-center justify-center bg-emerald-50 px-safe pb-safe pt-safe">
-      <div className="w-full max-w-sm rounded-2xl border border-emerald-100 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-bold text-emerald-900">Plot</h1>
-        <p className="mt-1 text-sm text-stone-500">Start tracking your season</p>
+      <div className="w-full max-w-sm rounded-3xl border border-emerald-100 bg-white p-6 shadow-sm">
+        <div className="flex items-center gap-3">
+          <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-600 text-white">
+            <Icon name="leaf" size={24} />
+          </span>
+          <div>
+            <h1 className="text-2xl font-bold text-emerald-900">Plot</h1>
+            <p className="text-sm text-stone-500">Start tracking your season</p>
+          </div>
+        </div>
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <label className="block text-sm font-medium text-stone-700">
-            Name
-            <input
+          <Field label="Name" hint="Optional">
+            <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 outline-none focus:border-emerald-500"
+              placeholder="Your name"
             />
-          </label>
+          </Field>
 
-          <label className="block text-sm font-medium text-stone-700">
-            Email
-            <input
+          <Field label="Email">
+            <Input
               type="email"
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 outline-none focus:border-emerald-500"
+              placeholder="you@farm.com"
             />
-          </label>
+          </Field>
 
-          <label className="block text-sm font-medium text-stone-700">
-            Password
-            <input
+          <Field label="Password" hint="At least 8 characters">
+            <Input
               type="password"
               required
               minLength={8}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 outline-none focus:border-emerald-500"
+              placeholder="••••••••"
             />
-          </label>
+          </Field>
 
           {error && <p className="text-sm text-red-600">{error}</p>}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="touch-target w-full rounded-xl bg-emerald-600 py-4 text-base font-semibold text-white active:bg-emerald-700 disabled:opacity-50"
-          >
+          <Button type="submit" size="lg" fullWidth loading={loading}>
             {loading ? "Creating account…" : "Create account"}
-          </button>
+          </Button>
         </form>
 
         <p className="mt-4 text-center text-sm text-stone-500">

@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 import BottomSheet from "@/components/ui/BottomSheet";
+import Button from "@/components/ui/Button";
+import Callout from "@/components/ui/Callout";
 import { formatParseSummary, getPostSaveTip } from "@/lib/coach/tips";
 import type { ResolvedParse } from "@/lib/parse/schema";
 import type { EventType, LocationRecord, PlantingRecord, PlantType } from "@/lib/types";
@@ -201,11 +203,11 @@ export default function ParseConfirmCard({
       title="Confirm log"
       subtitle="I understood this as:"
     >
-        <p className="rounded-xl bg-emerald-50 px-3 py-3 text-base font-medium leading-snug text-emerald-900">
-          {summary}
-        </p>
+        <Callout tone="tip" icon="sparkle">
+          <span className="text-base font-medium">{summary}</span>
+        </Callout>
 
-        <blockquote className="mt-2 rounded-lg bg-stone-50 px-3 py-2 text-xs text-stone-600 italic">
+        <blockquote className="mt-2 rounded-xl bg-stone-50 px-3 py-2 text-xs italic text-stone-600">
           &ldquo;{rawText}&rdquo;
         </blockquote>
 
@@ -403,18 +405,18 @@ export default function ParseConfirmCard({
 
         {error && <p className="mt-3 text-sm text-red-600">{error}</p>}
 
-        <button
-          type="button"
+        <Button
+          size="lg"
+          fullWidth
+          leftIcon="check"
+          loading={saving}
           onClick={handleConfirm}
-          disabled={saving}
-          className="touch-target mt-4 w-full rounded-2xl bg-emerald-600 py-4 text-base font-semibold text-white active:bg-emerald-700 disabled:opacity-50"
+          className="mt-4"
         >
-          {saving
-            ? "Saving…"
-            : splitMode && canSplit
-              ? `Save ${1 + additionalResolved.length} logs`
-              : "Confirm & save"}
-        </button>
+          {splitMode && canSplit
+            ? `Save ${1 + additionalResolved.length} logs`
+            : "Confirm & save"}
+        </Button>
     </BottomSheet>
   );
 }

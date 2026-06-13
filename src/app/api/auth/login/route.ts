@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { authenticateUser, createSession } from "@/lib/auth";
+import {
+  acceptPendingInvites,
+  authenticateUser,
+  createSession,
+  getMembershipsForUser,
+} from "@/lib/auth";
 import { handleZodError, jsonError } from "@/lib/api";
 import { loginSchema } from "@/lib/validators";
 
@@ -14,7 +19,10 @@ export async function POST(request: Request) {
       return jsonError("Invalid email or password", 401);
     }
 
-    await createSession(user.id);
+    // Pull in any team invites sent to this email, then land in a workspace.
+    await acceptPendingInvites(user.id, user.email);
+    const memberships = await getMembershipsForUser(user.id);
+    await createSession(user.id, memberships[0]?.orgId ?? null);
     return NextResponse.json({ user });
   } catch (error) {
     if (error instanceof ZodError) {

@@ -1,16 +1,16 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { locations } from "@/db/schema";
-import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import { handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { serializeLocation } from "@/lib/serializers";
 import { createLocationsBatchSchema } from "@/lib/validators";
 
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { user, org, response } = await requireOrg();
+  if (!org) return response!;
 
   try {
     const body = await request.json();
@@ -23,6 +23,22 @@ export async function POST(request: Request) {
       idByTemp.set(node.tempId, nanoid());
     }
 
+    // Nodes may instead attach to an existing location via parentId; verify the
+    // user owns each referenced existing parent before linking.
+    const existingParentIds = Array.from(
+      new Set(nodes.map((n) => n.parentId).filter((id): id is string => !!id)),
+    );
+    const ownedExistingParents = new Set<string>();
+    for (const parentId of existingParentIds) {
+      const owned = await db.query.locations.findFirst({
+        where: and(eq(locations.id, parentId), eq(locations.orgId, org.id)),
+      });
+      if (!owned) {
+        throw new Error(`Unknown parent reference: ${parentId}`);
+      }
+      ownedExistingParents.add(parentId);
+    }
+
     const values = nodes.map((node) => {
       let parentId: string | null = null;
       if (node.parentTempId) {
@@ -31,9 +47,15 @@ export async function POST(request: Request) {
           throw new Error(`Unknown parent reference: ${node.parentTempId}`);
         }
         parentId = resolved;
+      } else if (node.parentId) {
+        if (!ownedExistingParents.has(node.parentId)) {
+          throw new Error(`Unknown parent reference: ${node.parentId}`);
+        }
+        parentId = node.parentId;
       }
       return {
         id: idByTemp.get(node.tempId)!,
+        orgId: org.id,
         userId: user.id,
         name: node.name,
         type: node.type,
@@ -47,7 +69,7 @@ export async function POST(request: Request) {
 
     const ids = values.map((v) => v.id);
     const rows = await db.query.locations.findMany({
-      where: eq(locations.userId, user.id),
+      where: eq(locations.orgId, org.id),
     });
     const created = rows
       .filter((row) => ids.includes(row.id))

@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
 import { locations, plantings } from "@/db/schema";
-import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import { jsonError, requireOrg } from "@/lib/api";
 import { chatCompletion } from "@/lib/openrouter";
 import { buildParsePrompt } from "@/lib/parse/prompt";
 import { resolveParse } from "@/lib/parse/resolve";
@@ -13,8 +13,8 @@ import { parseRequestSchema } from "@/lib/parse/schema";
 import { serializeLocation, serializePlanting } from "@/lib/serializers";
 
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   try {
     const body = await request.json();
@@ -22,10 +22,10 @@ export async function POST(request: Request) {
 
     const [locationRows, plantingRows] = await Promise.all([
       db.query.locations.findMany({
-        where: eq(locations.userId, user.id),
+        where: eq(locations.orgId, org.id),
       }),
       db.query.plantings.findMany({
-        where: eq(plantings.userId, user.id),
+        where: eq(plantings.orgId, org.id),
       }),
     ]);
 
@@ -69,7 +69,12 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     if (error instanceof ZodError) {
-      return handleZodError(error);
+      // The request body itself failing is rare; a ZodError here almost always
+      // means the model's output didn't fit. Give a friendly retry, not raw Zod.
+      return jsonError(
+        "I couldn't read that one clearly. Try naming the action, plant, and place — e.g. \"watered tomatoes in Bed 2 today\".",
+        422,
+      );
     }
     if (error instanceof SyntaxError) {
       return jsonError("Failed to parse model response", 502);

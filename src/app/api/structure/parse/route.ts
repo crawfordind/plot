@@ -3,22 +3,22 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
 import { locations } from "@/db/schema";
-import { handleZodError, jsonError, requireUser } from "@/lib/api";
+import { handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { chatCompletion } from "@/lib/openrouter";
 import { buildStructurePrompt } from "@/lib/structure/prompt";
 import { structureParseRequestSchema, structureSpecSchema } from "@/lib/structure/schema";
 import { serializeLocation } from "@/lib/serializers";
 
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   try {
     const body = await request.json();
     const data = structureParseRequestSchema.parse(body);
 
     const locationRows = await db.query.locations.findMany({
-      where: eq(locations.userId, user.id),
+      where: eq(locations.orgId, org.id),
     });
     const locationRecords = locationRows.map(serializeLocation);
 

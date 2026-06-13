@@ -4,13 +4,13 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { events, plantings } from "@/db/schema";
-import { handleZodError, requireUser } from "@/lib/api";
+import { handleZodError, requireOrg } from "@/lib/api";
 import { confirmLogSchema } from "@/lib/parse/schema";
 import { serializeEvent } from "@/lib/serializers";
 
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { user, org, response } = await requireOrg();
+  if (!org) return response!;
 
   try {
     const body = await request.json();
@@ -22,6 +22,7 @@ export async function POST(request: Request) {
       const newPlantingId = nanoid();
       await db.insert(plantings).values({
         id: newPlantingId,
+        orgId: org.id,
         userId: user.id,
         locationId: data.createPlanting.locationId,
         plantType: data.createPlanting.plantType,
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
 
     await db.insert(events).values({
       id: eventId,
+      orgId: org.id,
       userId: user.id,
       plantingId,
       locationId: data.locationId ?? null,

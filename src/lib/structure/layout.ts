@@ -39,6 +39,7 @@ const LEAF_SIZE: Record<string, { w: number; h: number }> = {
   field: { w: 12, h: 18 },
   zone: { w: 8, h: 10 },
   farm: { w: 20, h: 24 },
+  paddock: { w: 15, h: 20 },
 };
 const DEFAULT_LEAF = { w: 4, h: 4 };
 

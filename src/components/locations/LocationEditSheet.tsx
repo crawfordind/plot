@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import Button from "@/components/ui/Button";
 import DeleteButton from "@/components/ui/DeleteButton";
+import { Field, Input, Select } from "@/components/ui/Field";
 import Sheet from "@/components/ui/Sheet";
 import type { LocationRecord, LocationType } from "@/lib/types";
 
@@ -87,52 +89,38 @@ export default function LocationEditSheet({
       }
     >
       <form onSubmit={handleSubmit} className="space-y-3">
-        <label className="block text-xs font-medium text-stone-600">
-          Name
-          <input
-            required
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
-          />
-        </label>
+        <Field label="Name">
+          <Input required value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
 
         <div className="grid grid-cols-2 gap-3">
-          <label className="block text-xs font-medium text-stone-600">
-            Type
-            <select
+          <Field label="Type">
+            <Select
               value={type}
               onChange={(e) => setType(e.target.value as LocationType)}
-              className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
             >
               {locationTypes.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
-            </select>
-          </label>
+            </Select>
+          </Field>
 
-          <label className="block text-xs font-medium text-stone-600">
-            Zone
-            <input
+          <Field label="Zone">
+            <Input
               value={zone}
               onChange={(e) => setZone(e.target.value)}
               placeholder="6b"
-              className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
             />
-          </label>
+          </Field>
         </div>
 
         {error && <p className="text-xs text-red-600">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={saving || !name.trim()}
-          className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Save changes"}
-        </button>
+        <Button type="submit" fullWidth loading={saving} disabled={saving || !name.trim()}>
+          Save changes
+        </Button>
       </form>
     </Sheet>
   );

@@ -4,16 +4,16 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { locations } from "@/db/schema";
-import { handleZodError, requireUser } from "@/lib/api";
+import { handleZodError, requireOrg } from "@/lib/api";
 import { serializeLocation } from "@/lib/serializers";
 import { createLocationSchema } from "@/lib/validators";
 
 export async function GET() {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { org, response } = await requireOrg();
+  if (!org) return response!;
 
   const rows = await db.query.locations.findMany({
-    where: eq(locations.userId, user.id),
+    where: eq(locations.orgId, org.id),
     orderBy: (table, { desc }) => [desc(table.createdAt)],
   });
 
@@ -21,8 +21,8 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const { user, response } = await requireUser();
-  if (!user) return response!;
+  const { user, org, response } = await requireOrg();
+  if (!org) return response!;
 
   try {
     const body = await request.json();
@@ -31,6 +31,7 @@ export async function POST(request: Request) {
 
     await db.insert(locations).values({
       id,
+      orgId: org.id,
       userId: user.id,
       name: data.name,
       type: data.type,

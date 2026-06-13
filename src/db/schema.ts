@@ -6,7 +6,9 @@ import {
   real,
   sqliteTable,
   text,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
+import { LOCATION_TYPE_VALUES } from "../lib/locations/catalog";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -18,6 +20,72 @@ export const users = sqliteTable("users", {
     .default(sql`(unixepoch() * 1000)`),
 });
 
+// A workspace: a farm/company/group that OWNS data. Every data row carries an
+// orgId; users collaborate by being members of the same organization.
+export const organizations = sqliteTable("organizations", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  createdByUserId: text("created_by_user_id").references(() => users.id, {
+    onDelete: "set null",
+  }),
+  createdAt: integer("created_at", { mode: "timestamp_ms" })
+    .notNull()
+    .default(sql`(unixepoch() * 1000)`),
+});
+
+// Links a user to an organization with a role. A user can belong to several orgs.
+export const memberships = sqliteTable(
+  "memberships",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["owner", "admin", "member"] })
+      .notNull()
+      .default("member"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    // One membership per (org, user).
+    uniqueIndex("memberships_org_user_idx").on(table.orgId, table.userId),
+    index("memberships_user_id_idx").on(table.userId),
+  ],
+);
+
+// Pending invitations to join an org, by email. Consumed when the invitee
+// registers or logs in with that email. Lets you invite people before they sign up.
+export const orgInvites = sqliteTable(
+  "org_invites",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    email: text("email").notNull(),
+    role: text("role", { enum: ["owner", "admin", "member"] })
+      .notNull()
+      .default("member"),
+    invitedByUserId: text("invited_by_user_id").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    token: text("token").notNull().unique(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    acceptedAt: integer("accepted_at", { mode: "timestamp_ms" }),
+  },
+  (table) => [
+    index("org_invites_email_idx").on(table.email),
+    index("org_invites_org_id_idx").on(table.orgId),
+  ],
+);
+
 export const sessions = sqliteTable(
   "sessions",
   {
@@ -25,6 +93,10 @@ export const sessions = sqliteTable(
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
+    // The org this session is currently working in (the active workspace).
+    activeOrgId: text("active_org_id").references(() => organizations.id, {
+      onDelete: "set null",
+    }),
     expiresAt: integer("expires_at", { mode: "timestamp_ms" }).notNull(),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
@@ -37,13 +109,16 @@ export const locations = sqliteTable(
   "locations",
   {
     id: text("id").primaryKey(),
+    // The workspace that owns this row (all members of the org share it).
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // The member who created it (audit; ownership/visibility is by orgId).
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
-    type: text("type", {
-      enum: ["farm", "field", "zone", "hoophouse", "bed", "row", "alley", "fence"],
-    }).notNull(),
+    type: text("type", { enum: LOCATION_TYPE_VALUES }).notNull(),
     // Self-reference so structures nest: farm › hoophouse › bed › row.
     parentId: text("parent_id").references((): AnySQLiteColumn => locations.id, {
       onDelete: "cascade",
@@ -64,6 +139,9 @@ export const varieties = sqliteTable(
   "varieties",
   {
     id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -84,6 +162,9 @@ export const seasons = sqliteTable(
   "seasons",
   {
     id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -111,6 +192,9 @@ export const plantings = sqliteTable(
   "plantings",
   {
     id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -150,6 +234,9 @@ export const events = sqliteTable(
   "events",
   {
     id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -199,6 +286,9 @@ export const crosses = sqliteTable(
   "crosses",
   {
     id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
     userId: text("user_id")
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
@@ -220,11 +310,172 @@ export const crosses = sqliteTable(
   (table) => [index("crosses_user_id_idx").on(table.userId)],
 );
 
+// A livestock group (mob/flock/herd) the producer rotates through paddocks.
+// species + headCount + avgWeightLb drive the NRCS forage-animal balance math.
+export const herds = sqliteTable(
+  "herds",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    species: text("species", {
+      enum: ["cattle", "sheep", "goat", "horse", "poultry", "other"],
+    }).notNull(),
+    headCount: integer("head_count").notNull(),
+    avgWeightLb: real("avg_weight_lb").notNull(),
+    // DM intake as % of body weight; null falls back to a per-species default.
+    dmIntakePct: real("dm_intake_pct"),
+    notes: text("notes"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [index("herds_user_id_idx").on(table.userId)],
+);
+
+// 1:1 grazing configuration layered onto a `location` of type "paddock".
+// Keeps the map feature (geometry) in `locations` and the agronomy here.
+export const paddocks = sqliteTable(
+  "paddocks",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    locationId: text("location_id")
+      .notNull()
+      .unique()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    primaryForage: text("primary_forage"),
+    // Acreage override; when null, computed from the location geometry.
+    acres: real("acres"),
+    // Prescribed recovery (rest) target before re-grazing, in days.
+    restTargetDays: integer("rest_target_days"),
+    // Prescribed "start"/"stop" grazing heights (inches), per NRCS 528.
+    startHeightIn: real("start_height_in"),
+    stopHeightIn: real("stop_height_in"),
+    notes: text("notes"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [index("paddocks_user_id_idx").on(table.userId)],
+);
+
+// One row per grazing period: this herd on this paddock from movedInAt to
+// movedOutAt. An open row (movedOutAt null) means the herd is grazing there now.
+// This table IS the NRCS 528 Recordkeeping Worksheet.
+export const grazingEvents = sqliteTable(
+  "grazing_events",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    herdId: text("herd_id")
+      .notNull()
+      .references(() => herds.id, { onDelete: "cascade" }),
+    locationId: text("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    movedInAt: integer("moved_in_at", { mode: "timestamp_ms" }).notNull(),
+    movedOutAt: integer("moved_out_at", { mode: "timestamp_ms" }),
+    // Grazing height (inches) when animals went on / came off.
+    heightInIn: real("height_in_in"),
+    heightOutIn: real("height_out_in"),
+    forageSpecies: text("forage_species"),
+    notes: text("notes"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("grazing_events_user_id_idx").on(table.userId),
+    index("grazing_events_herd_id_idx").on(table.herdId),
+    index("grazing_events_location_id_idx").on(table.locationId),
+    index("grazing_events_moved_in_at_idx").on(table.movedInAt),
+  ],
+);
+
+// Photos, media and documents attached to a location/asset. The bytes live on
+// disk (see src/lib/attachments/storage.ts); this row holds the metadata and the
+// stored filename pointer.
+export const attachments = sqliteTable(
+  "attachments",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    locationId: text("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    // Original upload name (for display + download), and the random on-disk name.
+    fileName: text("file_name").notNull(),
+    storedName: text("stored_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    // Coarse bucket for UI rendering (image gets a thumbnail; others a file chip).
+    kind: text("kind", {
+      enum: ["image", "video", "document", "other"],
+    }).notNull(),
+    caption: text("caption"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("attachments_user_id_idx").on(table.userId),
+    index("attachments_location_id_idx").on(table.locationId),
+  ],
+);
+
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
+  memberships: many(memberships),
   locations: many(locations),
   plantings: many(plantings),
   events: many(events),
+  herds: many(herds),
+  paddocks: many(paddocks),
+  grazingEvents: many(grazingEvents),
+}));
+
+export const organizationsRelations = relations(organizations, ({ many }) => ({
+  memberships: many(memberships),
+  invites: many(orgInvites),
+}));
+
+export const membershipsRelations = relations(memberships, ({ one }) => ({
+  org: one(organizations, {
+    fields: [memberships.orgId],
+    references: [organizations.id],
+  }),
+  user: one(users, {
+    fields: [memberships.userId],
+    references: [users.id],
+  }),
+}));
+
+export const orgInvitesRelations = relations(orgInvites, ({ one }) => ({
+  org: one(organizations, {
+    fields: [orgInvites.orgId],
+    references: [organizations.id],
+  }),
 }));
 
 export const sessionsRelations = relations(sessions, ({ one }) => ({
@@ -248,6 +499,23 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
   plantings: many(plantings),
   events: many(events),
   seasons: many(seasons),
+  paddock: one(paddocks, {
+    fields: [locations.id],
+    references: [paddocks.locationId],
+  }),
+  grazingEvents: many(grazingEvents),
+  attachments: many(attachments),
+}));
+
+export const attachmentsRelations = relations(attachments, ({ one }) => ({
+  user: one(users, {
+    fields: [attachments.userId],
+    references: [users.id],
+  }),
+  location: one(locations, {
+    fields: [attachments.locationId],
+    references: [locations.id],
+  }),
 }));
 
 export const plantingsRelations = relations(plantings, ({ one, many }) => ({
@@ -281,6 +549,40 @@ export const eventsRelations = relations(events, ({ one }) => ({
   }),
   location: one(locations, {
     fields: [events.locationId],
+    references: [locations.id],
+  }),
+}));
+
+export const herdsRelations = relations(herds, ({ one, many }) => ({
+  user: one(users, {
+    fields: [herds.userId],
+    references: [users.id],
+  }),
+  grazingEvents: many(grazingEvents),
+}));
+
+export const paddocksRelations = relations(paddocks, ({ one }) => ({
+  user: one(users, {
+    fields: [paddocks.userId],
+    references: [users.id],
+  }),
+  location: one(locations, {
+    fields: [paddocks.locationId],
+    references: [locations.id],
+  }),
+}));
+
+export const grazingEventsRelations = relations(grazingEvents, ({ one }) => ({
+  user: one(users, {
+    fields: [grazingEvents.userId],
+    references: [users.id],
+  }),
+  herd: one(herds, {
+    fields: [grazingEvents.herdId],
+    references: [herds.id],
+  }),
+  location: one(locations, {
+    fields: [grazingEvents.locationId],
     references: [locations.id],
   }),
 }));

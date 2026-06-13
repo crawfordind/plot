@@ -1,13 +1,28 @@
 "use client";
 
 import { useState } from "react";
+import SeasonPicker from "@/components/breeding/SeasonPicker";
+import VarietyPicker from "@/components/breeding/VarietyPicker";
+import LocationField from "@/components/map/LocationField";
+import { useMapInteraction } from "@/components/map/MapInteractionContext";
 import BottomSheet from "@/components/ui/BottomSheet";
-import type { LocationRecord, PlantType } from "@/lib/types";
+import Button from "@/components/ui/Button";
+import Callout from "@/components/ui/Callout";
+import { Field, Input, Select } from "@/components/ui/Field";
+import type {
+  LocationRecord,
+  PlantType,
+  SeasonRecord,
+  VarietyRecord,
+} from "@/lib/types";
 
 type PlantingFormProps = {
   locations: LocationRecord[];
+  varieties: VarietyRecord[];
+  seasons: SeasonRecord[];
   defaultLocationId?: string | null;
   onSaved: () => void;
+  onVarietyCreated: () => void;
   onClose: () => void;
 };
 
@@ -20,16 +35,22 @@ const plantTypes: { value: PlantType; label: string }[] = [
 
 export default function PlantingForm({
   locations,
+  varieties,
+  seasons,
   defaultLocationId,
   onSaved,
+  onVarietyCreated,
   onClose,
 }: PlantingFormProps) {
+  const { picking } = useMapInteraction();
   const [locationId, setLocationId] = useState(
     defaultLocationId ?? locations[0]?.id ?? "",
   );
   const [plantType, setPlantType] = useState<PlantType>("crop");
   const [commonName, setCommonName] = useState("");
   const [variety, setVariety] = useState("");
+  const [varietyId, setVarietyId] = useState<string | null>(null);
+  const [seasonId, setSeasonId] = useState<string | null>(null);
   const [source, setSource] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +69,8 @@ export default function PlantingForm({
           plantType,
           commonName,
           variety: variety || undefined,
+          varietyId: varietyId ?? undefined,
+          seasonId: seasonId ?? undefined,
           source: source || undefined,
         }),
       });
@@ -67,83 +90,88 @@ export default function PlantingForm({
   }
 
   return (
-    <BottomSheet open onClose={onClose} title="New planting">
+    <BottomSheet open onClose={onClose} title="New planting" hidden={picking}>
+        {locations.length === 0 && (
+          <Callout tone="warn" className="mb-3">
+            A planting needs a place to live. Map a location first — tap{" "}
+            <strong>Pin</strong> to drop one, or <strong>Build</strong> to map your whole
+            farm — then add the planting there.
+          </Callout>
+        )}
         <form onSubmit={handleSubmit} className="space-y-3">
-          <label className="block text-xs font-medium text-stone-600">
-            Location
-            <select
-              required
-              value={locationId}
-              onChange={(e) => setLocationId(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
-            >
-              {locations.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.name}
-                </option>
-              ))}
-            </select>
-          </label>
+          <LocationField
+            locations={locations}
+            value={locationId}
+            onChange={setLocationId}
+            pickTitle="Tap where to place this planting"
+          />
 
           <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs font-medium text-stone-600">
-              Type
-              <select
+            <Field label="Type">
+              <Select
                 value={plantType}
                 onChange={(e) => setPlantType(e.target.value as PlantType)}
-                className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
               >
                 {plantTypes.map((option) => (
                   <option key={option.value} value={option.value}>
                     {option.label}
                   </option>
                 ))}
-              </select>
-            </label>
+              </Select>
+            </Field>
 
-            <label className="block text-xs font-medium text-stone-600">
-              Common name
-              <input
+            <Field label="Common name">
+              <Input
                 required
                 value={commonName}
                 onChange={(e) => setCommonName(e.target.value)}
                 placeholder="Zinnia, chestnut…"
-                className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
               />
-            </label>
+            </Field>
           </div>
 
           <div className="grid grid-cols-2 gap-3">
-            <label className="block text-xs font-medium text-stone-600">
-              Variety
-              <input
+            <Field label="Variety">
+              <Input
                 value={variety}
                 onChange={(e) => setVariety(e.target.value)}
                 placeholder="Zin Master"
-                className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
               />
-            </label>
+            </Field>
 
-            <label className="block text-xs font-medium text-stone-600">
-              Source
-              <input
+            <Field label="Source">
+              <Input
                 value={source}
                 onChange={(e) => setSource(e.target.value)}
                 placeholder="Eden Brothers"
-                className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
               />
-            </label>
+            </Field>
           </div>
+
+          <VarietyPicker
+            varieties={varieties}
+            plantType={plantType}
+            value={varietyId}
+            onChange={(id, vName) => {
+              setVarietyId(id);
+              if (vName && !variety) setVariety(vName);
+            }}
+            onCreated={onVarietyCreated}
+          />
+
+          <SeasonPicker seasons={seasons} value={seasonId} onChange={setSeasonId} />
 
           {error && <p className="text-xs text-red-600">{error}</p>}
 
-          <button
+          <Button
             type="submit"
+            size="lg"
+            fullWidth
+            loading={saving}
             disabled={saving || !locationId || !commonName.trim()}
-            className="touch-target w-full rounded-2xl bg-emerald-600 py-4 text-base font-semibold text-white active:bg-emerald-700 disabled:opacity-50"
           >
-            {saving ? "Saving…" : "Create planting"}
-          </button>
+            Create planting
+          </Button>
         </form>
     </BottomSheet>
   );

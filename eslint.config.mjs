@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Stray local scratch copy of the project — git-ignored, must not be linted.
+    "plot-tmp/**",
   ]),
 ]);
 

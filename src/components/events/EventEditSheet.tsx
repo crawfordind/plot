@@ -1,6 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import LocationField from "@/components/map/LocationField";
+import { useMapInteraction } from "@/components/map/MapInteractionContext";
+import Button from "@/components/ui/Button";
 import DeleteButton from "@/components/ui/DeleteButton";
 import Sheet from "@/components/ui/Sheet";
 import type { EventRecord, EventType, LocationRecord, PlantingRecord } from "@/lib/types";
@@ -36,6 +39,7 @@ export default function EventEditSheet({
   onDeleted,
   onClose,
 }: EventEditSheetProps) {
+  const { picking } = useMapInteraction();
   const [type, setType] = useState<EventType>(event.type);
   const [locationId, setLocationId] = useState(event.locationId ?? "");
   const [plantingId, setPlantingId] = useState(event.plantingId ?? "");
@@ -97,7 +101,12 @@ export default function EventEditSheet({
   }
 
   return (
-    <Sheet title="Edit log" onClose={onClose} footer={<DeleteButton onDelete={handleDelete} />}>
+    <Sheet
+      title="Edit log"
+      onClose={onClose}
+      footer={<DeleteButton onDelete={handleDelete} />}
+      hidden={picking}
+    >
       <form onSubmit={handleSubmit} className="space-y-3">
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-xs font-medium text-stone-600">
@@ -126,24 +135,17 @@ export default function EventEditSheet({
           </label>
         </div>
 
-        <label className="block text-xs font-medium text-stone-600">
-          Location
-          <select
-            value={locationId}
-            onChange={(e) => {
-              setLocationId(e.target.value);
-              setPlantingId("");
-            }}
-            className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
-          >
-            <option value="">— none —</option>
-            {locations.map((location) => (
-              <option key={location.id} value={location.id}>
-                {location.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <LocationField
+          locations={locations}
+          value={locationId}
+          onChange={(id) => {
+            setLocationId(id);
+            setPlantingId("");
+          }}
+          pickTitle="Tap this log's location"
+          placeholder="— none —"
+          allowNone
+        />
 
         <label className="block text-xs font-medium text-stone-600">
           Planting
@@ -205,13 +207,9 @@ export default function EventEditSheet({
 
         {error && <p className="text-xs text-red-600">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={saving}
-          className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
-        >
-          {saving ? "Saving…" : "Save changes"}
-        </button>
+        <Button type="submit" fullWidth loading={saving}>
+          Save changes
+        </Button>
       </form>
     </Sheet>
   );

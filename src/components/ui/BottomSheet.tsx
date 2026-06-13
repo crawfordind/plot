@@ -8,6 +8,9 @@ type BottomSheetProps = {
   children: React.ReactNode;
   footer?: React.ReactNode;
   fullScreen?: boolean;
+  // Keep mounted (preserving form state) but visually hidden — used while the
+  // map is in tap-to-place mode so the map underneath is reachable.
+  hidden?: boolean;
 };
 
 export default function BottomSheet({
@@ -18,11 +21,15 @@ export default function BottomSheet({
   children,
   footer,
   fullScreen = false,
+  hidden = false,
 }: BottomSheetProps) {
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col justify-end">
+    <div
+      className="fixed inset-0 z-50 flex flex-col justify-end"
+      style={hidden ? { display: "none" } : undefined}
+    >
       <button
         type="button"
         aria-label="Close"

@@ -1,15 +1,31 @@
 "use client";
 
 import { useState } from "react";
+import LineageSection from "@/components/breeding/LineageSection";
+import VarietyPicker from "@/components/breeding/VarietyPicker";
+import LocationField from "@/components/map/LocationField";
+import { useMapInteraction } from "@/components/map/MapInteractionContext";
+import Button from "@/components/ui/Button";
 import DeleteButton from "@/components/ui/DeleteButton";
 import Sheet from "@/components/ui/Sheet";
-import type { LocationRecord, PlantingRecord, PlantingStatus, PlantType } from "@/lib/types";
+import type {
+  CrossRecord,
+  LocationRecord,
+  PlantingRecord,
+  PlantingStatus,
+  PlantType,
+  VarietyRecord,
+} from "@/lib/types";
 
 type PlantingEditSheetProps = {
   planting: PlantingRecord;
   locations: LocationRecord[];
+  varieties: VarietyRecord[];
+  plantings: PlantingRecord[];
+  crosses: CrossRecord[];
   onSaved: () => void;
   onDeleted: () => void;
+  onChanged: () => void;
   onClose: () => void;
 };
 
@@ -29,14 +45,20 @@ const statuses: { value: PlantingStatus; label: string }[] = [
 export default function PlantingEditSheet({
   planting,
   locations,
+  varieties,
+  plantings,
+  crosses,
   onSaved,
   onDeleted,
+  onChanged,
   onClose,
 }: PlantingEditSheetProps) {
+  const { picking } = useMapInteraction();
   const [locationId, setLocationId] = useState(planting.locationId);
   const [plantType, setPlantType] = useState<PlantType>(planting.plantType);
   const [commonName, setCommonName] = useState(planting.commonName);
   const [variety, setVariety] = useState(planting.variety ?? "");
+  const [varietyId, setVarietyId] = useState<string | null>(planting.varietyId);
   const [source, setSource] = useState(planting.source ?? "");
   const [status, setStatus] = useState<PlantingStatus>(planting.status);
   const [saving, setSaving] = useState(false);
@@ -56,6 +78,7 @@ export default function PlantingEditSheet({
           plantType,
           commonName,
           variety: variety || undefined,
+          varietyId,
           source: source || undefined,
           status,
         }),
@@ -92,22 +115,15 @@ export default function PlantingEditSheet({
       title="Edit planting"
       onClose={onClose}
       footer={<DeleteButton onDelete={handleDelete} />}
+      hidden={picking}
     >
       <form onSubmit={handleSubmit} className="space-y-3">
-        <label className="block text-xs font-medium text-stone-600">
-          Location
-          <select
-            value={locationId}
-            onChange={(e) => setLocationId(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-stone-200 px-3 py-2 text-sm"
-          >
-            {locations.map((location) => (
-              <option key={location.id} value={location.id}>
-                {location.name}
-              </option>
-            ))}
-          </select>
-        </label>
+        <LocationField
+          locations={locations}
+          value={locationId}
+          onChange={setLocationId}
+          pickTitle="Tap the planting's new location"
+        />
 
         <div className="grid grid-cols-2 gap-3">
           <label className="block text-xs font-medium text-stone-600">
@@ -171,15 +187,34 @@ export default function PlantingEditSheet({
           </label>
         </div>
 
+        <VarietyPicker
+          varieties={varieties}
+          plantType={plantType}
+          value={varietyId}
+          onChange={(id, vName) => {
+            setVarietyId(id);
+            if (vName && !variety) setVariety(vName);
+          }}
+          onCreated={onChanged}
+        />
+
+        <LineageSection
+          planting={planting}
+          plantings={plantings}
+          crosses={crosses}
+          onChanged={onChanged}
+        />
+
         {error && <p className="text-xs text-red-600">{error}</p>}
 
-        <button
+        <Button
           type="submit"
+          fullWidth
+          loading={saving}
           disabled={saving || !commonName.trim()}
-          className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
         >
-          {saving ? "Saving…" : "Save changes"}
-        </button>
+          Save changes
+        </Button>
       </form>
     </Sheet>
   );
