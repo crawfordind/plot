@@ -12,10 +12,11 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx scripts/seed.ts",
     "db:wipe": "tsx scripts/wipe.ts",
-    "db:setup": "npm run db:push && npm run db:seed",
+    "db:setup": "tsx scripts/setup.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1068.0",
     "@libsql/client": "^0.17.3",
     "bcryptjs": "^3.0.3",
     "drizzle-orm": "^0.45.2",
