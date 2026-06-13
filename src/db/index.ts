@@ -10,4 +10,8 @@ const client = createClient({
   authToken,
 });
 
+// Exported for low-level needs (raw DDL in the one-time setup bootstrap);
+// application code should use `db` below.
+export { client };
+
 export const db = drizzle(client, { schema });

@@ -19,6 +19,9 @@ export async function POST(request: Request) {
     if (error instanceof Error && error.message === "Email already registered") {
       return jsonError(error.message, 409);
     }
+    // Surface the real cause in server logs; the client still gets a generic
+    // message. Without this, prod 500s show up blank and can't be diagnosed.
+    console.error("POST /api/auth/register failed:", error);
     return jsonError("Registration failed", 500);
   }
 }
