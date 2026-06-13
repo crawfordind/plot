@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { AttachmentRecord } from "@/lib/types";
+import { getCurrentFix } from "@/lib/capture/geo";
+import PhotoInsightView, {
+  SUBJECT_LABEL,
+} from "@/components/locations/PhotoInsightView";
+import type { AttachmentRecord, AttachmentSource } from "@/lib/types";
 
 type AttachmentsSectionProps = {
   locationId: string;
@@ -22,9 +26,9 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-// Photos, media and documents attached to a location. Fetches its own list so it
-// only loads when an asset is open. Camera capture on phones + a general file
-// picker, a thumbnail grid, and per-item delete.
+// Photos, media and documents attached to a location, each run through the vision
+// agronomist model. Camera capture records GPS + heading; the newest photo's AI
+// read surfaces automatically, and analysis state is always visible (never silent).
 export default function AttachmentsSection({
   locationId,
 }: AttachmentsSectionProps) {
@@ -32,6 +36,12 @@ export default function AttachmentsSection({
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [contextDraft, setContextDraft] = useState("");
+  // Ids currently being analyzed, and the last analyze error per id.
+  const [pending, setPending] = useState<Set<string>>(new Set());
+  const [analyzeErrors, setAnalyzeErrors] = useState<Record<string, string>>({});
+  const [savingContext, setSavingContext] = useState(false);
   const cameraRef = useRef<HTMLInputElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -46,21 +56,79 @@ export default function AttachmentsSection({
   }, [locationId]);
 
   useEffect(() => {
-    // Fetch this location's attachments when the open asset changes. load() sets
-    // a loading flag then resolves via fetch — a legitimate data-sync effect.
+    // Data-sync effect: load() flips a loading flag then resolves via fetch.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     load();
   }, [load]);
 
-  async function handleFiles(fileList: FileList | null) {
+  const setPendingFor = useCallback((id: string, on: boolean) => {
+    setPending((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
+
+  // Kick off (or retry) analysis for one image — never silent: failures are
+  // captured and shown with a Retry affordance.
+  const analyze = useCallback(
+    async (id: string) => {
+      setPendingFor(id, true);
+      setAnalyzeErrors((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      });
+      try {
+        const res = await fetch(`/api/attachments/${id}/analyze`, {
+          method: "POST",
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setAnalyzeErrors((prev) => ({
+            ...prev,
+            [id]: data.error ?? `Analysis failed (${res.status})`,
+          }));
+        }
+      } catch {
+        setAnalyzeErrors((prev) => ({
+          ...prev,
+          [id]: "Analysis failed — network error",
+        }));
+      } finally {
+        setPendingFor(id, false);
+        await load();
+      }
+    },
+    [load, setPendingFor],
+  );
+
+  async function handleFiles(
+    fileList: FileList | null,
+    source: AttachmentSource,
+  ) {
     if (!fileList || fileList.length === 0) return;
     setUploading(true);
     setError(null);
+
+    const fix = source === "asset_camera" ? await getCurrentFix() : null;
+
+    const newImageIds: string[] = [];
     try {
       for (const file of Array.from(fileList)) {
         const form = new FormData();
         form.append("file", file);
         form.append("locationId", locationId);
+        form.append("source", source);
+        if (fix) {
+          if (fix.lat !== null) form.append("lat", String(fix.lat));
+          if (fix.lng !== null) form.append("lng", String(fix.lng));
+          if (fix.accuracy !== null)
+            form.append("gpsAccuracy", String(fix.accuracy));
+          if (fix.heading !== null) form.append("heading", String(fix.heading));
+          form.append("capturedAt", String(Date.now()));
+        }
         const res = await fetch("/api/attachments", {
           method: "POST",
           body: form,
@@ -69,8 +137,18 @@ export default function AttachmentsSection({
           const data = await res.json().catch(() => ({}));
           throw new Error(data.error ?? "Upload failed");
         }
+        const { attachment } = (await res.json()) as {
+          attachment: AttachmentRecord;
+        };
+        if (attachment.kind === "image") newImageIds.push(attachment.id);
       }
       await load();
+      // Surface the freshest photo's read immediately, then analyze automatically.
+      if (newImageIds.length > 0) {
+        setSelectedId(newImageIds[newImageIds.length - 1]);
+        setContextDraft("");
+      }
+      await Promise.all(newImageIds.map((id) => analyze(id)));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -80,10 +158,39 @@ export default function AttachmentsSection({
     }
   }
 
+  async function saveContextAndAnalyze(id: string) {
+    setSavingContext(true);
+    try {
+      await fetch(`/api/attachments/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userContext: contextDraft }),
+      });
+    } finally {
+      setSavingContext(false);
+    }
+    await analyze(id);
+  }
+
   async function remove(id: string) {
     setItems((prev) => prev.filter((a) => a.id !== id));
+    if (selectedId === id) setSelectedId(null);
     await fetch(`/api/attachments/${id}`, { method: "DELETE" }).catch(() => {});
   }
+
+  function openItem(item: AttachmentRecord) {
+    if (item.kind !== "image") {
+      window.open(item.url, "_blank", "noreferrer");
+      return;
+    }
+    setSelectedId((cur) => (cur === item.id ? null : item.id));
+    setContextDraft(item.userContext ?? "");
+  }
+
+  const selected = items.find((i) => i.id === selectedId) ?? null;
+  const analyzingCount = items.filter(
+    (i) => pending.has(i.id) || i.analysisStatus === "processing",
+  ).length;
 
   return (
     <section className="mt-5">
@@ -100,7 +207,7 @@ export default function AttachmentsSection({
         accept="image/*"
         capture="environment"
         className="hidden"
-        onChange={(e) => handleFiles(e.target.files)}
+        onChange={(e) => handleFiles(e.target.files, "asset_camera")}
       />
       <input
         ref={fileRef}
@@ -108,7 +215,7 @@ export default function AttachmentsSection({
         accept={FILE_ACCEPT}
         multiple
         className="hidden"
-        onChange={(e) => handleFiles(e.target.files)}
+        onChange={(e) => handleFiles(e.target.files, "upload")}
       />
 
       <div className="mt-2 flex gap-2">
@@ -132,53 +239,129 @@ export default function AttachmentsSection({
 
       {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
 
+      {analyzingCount > 0 && (
+        <p className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+          AI agronomist is reading {analyzingCount} photo
+          {analyzingCount > 1 ? "s" : ""}…
+        </p>
+      )}
+
       {loading ? (
         <p className="mt-3 py-2 text-sm text-stone-400">Loading…</p>
       ) : items.length === 0 ? (
         <p className="mt-3 py-2 text-sm text-stone-400">
-          No photos or files yet — add field photos, soil tests, permits…
+          No photos or files yet — take a field photo and the AI agronomist will read it.
         </p>
       ) : (
         <ul className="mt-3 grid grid-cols-3 gap-2">
-          {items.map((item) => (
-            <li key={item.id} className="group relative">
-              <a
-                href={item.url}
-                target="_blank"
-                rel="noreferrer"
-                className="block aspect-square overflow-hidden rounded-xl border border-stone-200 bg-stone-50"
-                title={item.fileName}
-              >
-                {item.kind === "image" ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
-                    src={item.url}
-                    alt={item.caption ?? item.fileName}
-                    className="h-full w-full object-cover"
-                  />
-                ) : (
-                  <span className="flex h-full w-full flex-col items-center justify-center gap-1 p-1 text-center">
-                    <span className="text-2xl">{kindEmoji(item.kind)}</span>
-                    <span className="line-clamp-2 break-all text-[10px] leading-tight text-stone-500">
-                      {item.fileName}
+          {items.map((item) => {
+            const itemAnalyzing =
+              pending.has(item.id) || item.analysisStatus === "processing";
+            return (
+              <li key={item.id} className="group relative">
+                <button
+                  type="button"
+                  onClick={() => openItem(item)}
+                  className={`block aspect-square w-full overflow-hidden rounded-xl border bg-stone-50 text-left ${
+                    selectedId === item.id
+                      ? "border-emerald-500 ring-2 ring-emerald-500/30"
+                      : "border-stone-200"
+                  }`}
+                  title={item.fileName}
+                >
+                  {item.kind === "image" ? (
+                    <span className="relative block h-full w-full">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={item.url}
+                        alt={item.caption ?? item.fileName}
+                        className="h-full w-full object-cover"
+                      />
+                      {item.insight && (
+                        <span className="absolute inset-x-0 bottom-0 truncate bg-black/55 px-1 py-0.5 text-[10px] font-medium text-white">
+                          {SUBJECT_LABEL[item.insight.subjectType] ??
+                            item.insight.subjectType}
+                        </span>
+                      )}
+                      {itemAnalyzing && (
+                        <span className="absolute inset-0 flex items-center justify-center bg-black/30">
+                          <span className="h-4 w-4 animate-pulse rounded-full bg-emerald-400" />
+                        </span>
+                      )}
+                      {!itemAnalyzing && item.analysisStatus === "failed" && (
+                        <span className="absolute right-1 bottom-1 rounded bg-red-500 px-1 text-[9px] font-bold text-white">
+                          !
+                        </span>
+                      )}
                     </span>
-                    <span className="text-[10px] text-stone-400">
-                      {formatSize(item.sizeBytes)}
+                  ) : (
+                    <span className="flex h-full w-full flex-col items-center justify-center gap-1 p-1 text-center">
+                      <span className="text-2xl">{kindEmoji(item.kind)}</span>
+                      <span className="line-clamp-2 break-all text-[10px] leading-tight text-stone-500">
+                        {item.fileName}
+                      </span>
+                      <span className="text-[10px] text-stone-400">
+                        {formatSize(item.sizeBytes)}
+                      </span>
                     </span>
-                  </span>
-                )}
-              </a>
-              <button
-                type="button"
-                aria-label={`Delete ${item.fileName}`}
-                onClick={() => remove(item.id)}
-                className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-xs text-white active:bg-black/75"
-              >
-                ✕
-              </button>
-            </li>
-          ))}
+                  )}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete ${item.fileName}`}
+                  onClick={() => remove(item.id)}
+                  className="absolute right-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/55 text-xs text-white active:bg-black/75"
+                >
+                  ✕
+                </button>
+              </li>
+            );
+          })}
         </ul>
+      )}
+
+      {selected && selected.kind === "image" && (
+        <div className="mt-3 rounded-xl border border-stone-200 bg-stone-50 p-3">
+          <PhotoInsightView
+            insight={selected.insight}
+            status={selected.analysisStatus}
+            analyzing={pending.has(selected.id)}
+            error={analyzeErrors[selected.id] ?? null}
+            geo={{
+              lat: selected.lat,
+              lng: selected.lng,
+              heading: selected.heading,
+              placeLabel: selected.placeLabel,
+            }}
+            onRetry={() => analyze(selected.id)}
+          />
+
+          <div className="mt-3 border-t border-stone-200 pt-2">
+            <label className="text-xs font-medium text-stone-500">
+              Context for the AI
+              {selected.source === "upload" &&
+                " (uploaded photo — describe what & where)"}
+            </label>
+            <textarea
+              value={contextDraft}
+              onChange={(e) => setContextDraft(e.target.value)}
+              rows={2}
+              placeholder="e.g. north bed, tomatoes showing leaf curl after the heat wave"
+              className="mt-1 w-full rounded-lg border border-stone-200 p-2 text-sm"
+            />
+            <button
+              type="button"
+              onClick={() => saveContextAndAnalyze(selected.id)}
+              disabled={savingContext || pending.has(selected.id)}
+              className="mt-1 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white active:bg-emerald-700 disabled:opacity-50"
+            >
+              {savingContext || pending.has(selected.id)
+                ? "Working…"
+                : "Save context & re-analyze"}
+            </button>
+          </div>
+        </div>
       )}
     </section>
   );
