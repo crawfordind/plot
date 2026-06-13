@@ -7,6 +7,7 @@ import { jsonError, requireOrg } from "@/lib/api";
 import {
   MAX_ATTACHMENT_BYTES,
   attachmentKind,
+  deleteAttachmentFile,
   safeExtension,
   saveAttachmentFile,
 } from "@/lib/attachments/storage";
@@ -134,29 +135,42 @@ export async function POST(request: Request) {
       ? userContextRaw.trim()
       : null;
 
-  await db.insert(attachments).values({
-    id,
-    orgId: org.id,
-    userId: user.id,
-    locationId,
-    fileName: file.name || storedName,
-    storedName,
-    mimeType: file.type || "application/octet-stream",
-    sizeBytes: file.size,
-    kind,
-    caption:
-      typeof caption === "string" && caption.trim() ? caption.trim() : null,
-    source,
-    lat,
-    lng,
-    gpsAccuracyM,
-    heading,
-    capturedAt,
-    placeLabel,
-    userContext,
-    // Images await analysis; everything else is terminal-by-default.
-    analysisStatus: kind === "image" ? "pending" : "done",
-  });
+  try {
+    await db.insert(attachments).values({
+      id,
+      orgId: org.id,
+      userId: user.id,
+      locationId,
+      fileName: file.name || storedName,
+      storedName,
+      mimeType: file.type || "application/octet-stream",
+      sizeBytes: file.size,
+      kind,
+      caption:
+        typeof caption === "string" && caption.trim() ? caption.trim() : null,
+      source,
+      lat,
+      lng,
+      gpsAccuracyM,
+      heading,
+      capturedAt,
+      placeLabel,
+      userContext,
+      // Images await analysis; everything else is terminal-by-default.
+      analysisStatus: kind === "image" ? "pending" : "done",
+    });
+  } catch (error) {
+    // Surface the real DB error instead of a blank 500. The usual culprit in
+    // production is a stale schema (e.g. "no column named source") when the new
+    // attachment columns / photo_insights table haven't been pushed to the DB.
+    console.error("Attachment DB insert failed:", error);
+    // Don't leave the just-uploaded object orphaned in storage.
+    await deleteAttachmentFile(storedName).catch(() => {});
+    return jsonError(
+      "Couldn't save the attachment. If this keeps happening, the database schema may be out of date (run db:push).",
+      500,
+    );
+  }
 
   const row = await db.query.attachments.findFirst({
     where: eq(attachments.id, id),
