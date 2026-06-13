@@ -65,3 +65,30 @@ export async function geocodeAddress(query: string): Promise<GeocodeResult[]> {
     return result;
   });
 }
+
+const NOMINATIM_REVERSE_URL = "https://nominatim.openstreetmap.org/reverse";
+
+// Coordinates -> human-readable place label (best-effort). Used to give the vision
+// model a sense of *where* a photo was taken. Returns null on any failure rather
+// than throwing — a missing label must never block an upload or analysis.
+export async function reverseGeocode(
+  lat: number,
+  lng: number,
+): Promise<string | null> {
+  try {
+    const url = new URL(NOMINATIM_REVERSE_URL);
+    url.searchParams.set("lat", String(lat));
+    url.searchParams.set("lon", String(lng));
+    url.searchParams.set("format", "jsonv2");
+    url.searchParams.set("zoom", "14");
+
+    const response = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, "Accept-Language": "en" },
+    });
+    if (!response.ok) return null;
+    const hit = (await response.json()) as { display_name?: string };
+    return hit.display_name ?? null;
+  } catch {
+    return null;
+  }
+}

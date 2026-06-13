@@ -57,6 +57,51 @@ export type PendingInviteRecord = {
 
 export type AttachmentKind = "image" | "video" | "document" | "other";
 
+export type AttachmentSource = "asset_camera" | "live_camera" | "upload";
+
+export type AttachmentAnalysisStatus =
+  | "pending"
+  | "processing"
+  | "done"
+  | "failed";
+
+export type PhotoSubjectType =
+  | "crop"
+  | "soil"
+  | "pest_disease"
+  | "weed"
+  | "livestock"
+  | "equipment"
+  | "infrastructure"
+  | "water"
+  | "landscape"
+  | "other";
+
+export type PhotoObservations = {
+  subject: string | null;
+  growthStage: string | null;
+  healthAssessment: string | null;
+  soilCondition: string | null;
+  pestsOrDisease: string | null;
+  weeds: string | null;
+  gridNotes: string | null;
+  recommendations: string[];
+  concerns: string[];
+};
+
+export type PhotoInsightRecord = {
+  id: string;
+  attachmentId: string;
+  model: string;
+  promptVersion: string;
+  summary: string;
+  subjectType: PhotoSubjectType;
+  tags: string[];
+  observations: PhotoObservations;
+  confidence: number | null;
+  createdAt: string;
+};
+
 export type AttachmentRecord = {
   id: string;
   locationId: string;
@@ -65,9 +110,19 @@ export type AttachmentRecord = {
   sizeBytes: number;
   kind: AttachmentKind;
   caption: string | null;
+  source: AttachmentSource;
+  lat: number | null;
+  lng: number | null;
+  heading: number | null;
+  capturedAt: string | null;
+  placeLabel: string | null;
+  userContext: string | null;
+  analysisStatus: AttachmentAnalysisStatus;
   createdAt: string;
   // Convenience URL the client uses to load/download the file.
   url: string;
+  // The AI read of this photo, when one exists.
+  insight: PhotoInsightRecord | null;
 };
 
 export type PlantingRecord = {

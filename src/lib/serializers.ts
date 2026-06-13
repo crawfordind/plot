@@ -1,4 +1,8 @@
-import type { GeoJSONGeometry } from "@/lib/types";
+import type {
+  GeoJSONGeometry,
+  PhotoInsightRecord,
+  PhotoObservations,
+} from "@/lib/types";
 import type {
   attachments,
   crosses,
@@ -7,6 +11,7 @@ import type {
   herds,
   locations,
   paddocks,
+  photoInsights,
   plantings,
   seasons,
   varieties,
@@ -14,6 +19,7 @@ import type {
 
 type LocationRow = typeof locations.$inferSelect;
 type AttachmentRow = typeof attachments.$inferSelect;
+type PhotoInsightRow = typeof photoInsights.$inferSelect;
 type PlantingRow = typeof plantings.$inferSelect;
 type EventRow = typeof events.$inferSelect;
 type HerdRow = typeof herds.$inferSelect;
@@ -35,7 +41,49 @@ export function serializeLocation(row: LocationRow) {
   };
 }
 
-export function serializeAttachment(row: AttachmentRow) {
+const EMPTY_OBSERVATIONS: PhotoObservations = {
+  subject: null,
+  growthStage: null,
+  healthAssessment: null,
+  soilCondition: null,
+  pestsOrDisease: null,
+  weeds: null,
+  gridNotes: null,
+  recommendations: [],
+  concerns: [],
+};
+
+function parseJson<T>(value: string | null, fallback: T): T {
+  if (!value) return fallback;
+  try {
+    return JSON.parse(value) as T;
+  } catch {
+    return fallback;
+  }
+}
+
+export function serializePhotoInsight(row: PhotoInsightRow): PhotoInsightRecord {
+  return {
+    id: row.id,
+    attachmentId: row.attachmentId,
+    model: row.model,
+    promptVersion: row.promptVersion,
+    summary: row.summary,
+    subjectType: row.subjectType,
+    tags: parseJson<string[]>(row.tags, []),
+    observations: {
+      ...EMPTY_OBSERVATIONS,
+      ...parseJson<Partial<PhotoObservations>>(row.observations, {}),
+    },
+    confidence: row.confidence,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function serializeAttachment(
+  row: AttachmentRow,
+  insight?: PhotoInsightRow | null,
+) {
   return {
     id: row.id,
     locationId: row.locationId,
@@ -44,8 +92,17 @@ export function serializeAttachment(row: AttachmentRow) {
     sizeBytes: row.sizeBytes,
     kind: row.kind,
     caption: row.caption,
+    source: row.source,
+    lat: row.lat,
+    lng: row.lng,
+    heading: row.heading,
+    capturedAt: row.capturedAt ? row.capturedAt.toISOString() : null,
+    placeLabel: row.placeLabel,
+    userContext: row.userContext,
+    analysisStatus: row.analysisStatus,
     createdAt: row.createdAt.toISOString(),
     url: `/api/attachments/${row.id}/file`,
+    insight: insight ? serializePhotoInsight(insight) : null,
   };
 }
 

@@ -434,6 +434,33 @@ export const attachments = sqliteTable(
       enum: ["image", "video", "document", "other"],
     }).notNull(),
     caption: text("caption"),
+    // How the photo entered the system, which decides how it's labelled:
+    //   asset_camera — shot in-app from a specific asset's panel (labelled as it)
+    //   live_camera  — shot in-app with no asset (snapped to nearest by GPS)
+    //   upload       — picked from the gallery/disk (geo from EXIF; user adds context)
+    source: text("source", {
+      enum: ["asset_camera", "live_camera", "upload"],
+    })
+      .notNull()
+      .default("upload"),
+    // Where the photo was taken and which way the camera faced. Captured live for
+    // in-app shots; read from EXIF for uploads. All nullable — geo is best-effort.
+    lat: real("lat"),
+    lng: real("lng"),
+    gpsAccuracyM: real("gps_accuracy_m"),
+    // Compass heading in degrees (0=N, 90=E), i.e. the direction the lens pointed.
+    heading: real("heading"),
+    capturedAt: integer("captured_at", { mode: "timestamp_ms" }),
+    // Reverse-geocoded place label for the coordinates (best-effort, may be null).
+    placeLabel: text("place_label"),
+    // Free-text context the user supplies before analysis (esp. for uploads).
+    userContext: text("user_context"),
+    // Lifecycle of the vision analysis for this photo.
+    analysisStatus: text("analysis_status", {
+      enum: ["pending", "processing", "done", "failed"],
+    })
+      .notNull()
+      .default("pending"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -442,6 +469,55 @@ export const attachments = sqliteTable(
     index("attachments_user_id_idx").on(table.userId),
     index("attachments_location_id_idx").on(table.locationId),
   ],
+);
+
+// One AI "read" of a photo by the agronomist/soil-scientist vision model. Kept in
+// its own table (1:1 via the unique attachmentId) so re-analysis simply replaces
+// the row and the lean `attachments` table stays focused on the file itself.
+export const photoInsights = sqliteTable(
+  "photo_insights",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    attachmentId: text("attachment_id")
+      .notNull()
+      .unique()
+      .references(() => attachments.id, { onDelete: "cascade" }),
+    // Provenance of the read so insights stay interpretable as models/prompts evolve.
+    model: text("model").notNull(),
+    promptVersion: text("prompt_version").notNull(),
+    // One-paragraph plain-language read of the photo.
+    summary: text("summary").notNull(),
+    // What the photo is mainly about — drives "right images for the right things".
+    subjectType: text("subject_type", {
+      enum: [
+        "crop",
+        "soil",
+        "pest_disease",
+        "weed",
+        "livestock",
+        "equipment",
+        "infrastructure",
+        "water",
+        "landscape",
+        "other",
+      ],
+    }).notNull(),
+    // JSON string[] of short tags for search/grouping.
+    tags: text("tags").notNull().default("[]"),
+    // JSON object of structured agronomy/soil observations + recommendations.
+    observations: text("observations").notNull().default("{}"),
+    // Full raw model response, for debugging and future re-processing.
+    raw: text("raw"),
+    // Model's self-reported confidence, 0–1.
+    confidence: real("confidence"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [index("photo_insights_org_id_idx").on(table.orgId)],
 );
 
 export const usersRelations = relations(users, ({ many }) => ({
@@ -515,6 +591,17 @@ export const attachmentsRelations = relations(attachments, ({ one }) => ({
   location: one(locations, {
     fields: [attachments.locationId],
     references: [locations.id],
+  }),
+  insight: one(photoInsights, {
+    fields: [attachments.id],
+    references: [photoInsights.attachmentId],
+  }),
+}));
+
+export const photoInsightsRelations = relations(photoInsights, ({ one }) => ({
+  attachment: one(attachments, {
+    fields: [photoInsights.attachmentId],
+    references: [attachments.id],
   }),
 }));
 
