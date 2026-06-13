@@ -22,6 +22,7 @@ import {
 } from "@/components/map/MapInteractionContext";
 import MobileHeader from "@/components/map/MobileHeader";
 import NewFarmSheet from "@/components/map/NewFarmSheet";
+import TakePhotoSheet from "@/components/map/TakePhotoSheet";
 import SelectionBar from "@/components/map/SelectionBar";
 import WorkspacePanel from "@/components/workspace/WorkspacePanel";
 import PlantingEditSheet from "@/components/plantings/PlantingEditSheet";
@@ -186,6 +187,7 @@ export default function MapShell({ userName }: MapShellProps) {
   const [drawKind, setDrawKind] = useState<"paddock" | "farm">("paddock");
   const [farmDraftName, setFarmDraftName] = useState<string | null>(null);
   const [showNewFarm, setShowNewFarm] = useState(false);
+  const [showCapture, setShowCapture] = useState(false);
   // Geometry-edit targets: the ids the user chose to transform. One id edits that
   // location (its descendants follow). Several ids transform together via a
   // synthetic bounding-box gizmo.
@@ -996,6 +998,19 @@ export default function MapShell({ userName }: MapShellProps) {
             hidden={overlayOpen}
           />
 
+          {/* Global "farm photo" capture — always-on-hand camera for general
+              shots, auto-filed to the nearest asset and read by the AI. */}
+          {!overlayOpen && !manipulating && (
+            <button
+              type="button"
+              onClick={() => setShowCapture(true)}
+              aria-label="Take a farm photo"
+              className="absolute bottom-36 right-3 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-xl text-white shadow-lg active:bg-emerald-700"
+            >
+              📷
+            </button>
+          )}
+
           {loaded &&
             locations.length === 0 &&
             !dropMode &&
@@ -1170,6 +1185,15 @@ export default function MapShell({ userName }: MapShellProps) {
             onClose={() => setShowNewFarm(false)}
           />
         )}
+
+        <TakePhotoSheet
+          open={showCapture}
+          onClose={() => setShowCapture(false)}
+          locations={locations}
+          selectedLocationId={selectedLocationId}
+          mapCenter={mapCenter}
+          onSaved={refreshData}
+        />
 
         {showBuilder && (
           <StructureBuilder
