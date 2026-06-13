@@ -12,7 +12,7 @@
     "db:push": "drizzle-kit push",
     "db:seed": "tsx scripts/seed.ts",
     "db:wipe": "tsx scripts/wipe.ts",
-    "db:setup": "npm run db:push && npm run db:seed",
+    "db:setup": "tsx scripts/setup.ts",
     "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
