@@ -45,7 +45,11 @@ export type IconName =
   | "users"
   | "camera"
   | "chat"
-  | "send";
+  | "send"
+  | "paperclip"
+  | "file"
+  | "copy"
+  | "pin";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   users: (
@@ -268,6 +272,27 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   send: <path d="M4.5 12 20 4.5 14 20l-3.2-6.3L4.5 12Z" />,
+  paperclip: (
+    <path d="M20 11.5 12 19.5a4.5 4.5 0 0 1-6.4-6.4l8-8a3 3 0 0 1 4.3 4.3l-8 8a1.5 1.5 0 0 1-2.2-2.2l7.3-7.3" />
+  ),
+  file: (
+    <>
+      <path d="M6 3h8l4 4v14a0 0 0 0 1 0 0H6a0 0 0 0 1 0 0V3Z" />
+      <path d="M14 3v4h4" />
+    </>
+  ),
+  copy: (
+    <>
+      <rect x="9" y="9" width="11" height="11" rx="2" />
+      <path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1" />
+    </>
+  ),
+  pin: (
+    <>
+      <path d="M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6Z" />
+      <path d="M12 14v7" />
+    </>
+  ),
 };
 
 type IconProps = SVGProps<SVGSVGElement> & {

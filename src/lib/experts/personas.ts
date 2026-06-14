@@ -8,10 +8,14 @@
 // unions the slices across the selected experts and builds only those sections.
 export type ContextSlice = "farm" | "crops" | "livestock" | "soil" | "activity";
 
-export type ExpertId = "agronomist" | "usda_animal" | "soil_scientist";
+export type ExpertId =
+  | "plot_assistant"
+  | "agronomist"
+  | "usda_animal"
+  | "soil_scientist";
 
 // Accent key → maps to static Tailwind classes in the UI (see ExpertChat).
-export type ExpertAccent = "emerald" | "amber" | "orange";
+export type ExpertAccent = "sky" | "emerald" | "amber" | "orange";
 
 export type Expert = {
   id: ExpertId;
@@ -30,6 +34,33 @@ export type Expert = {
 };
 
 export const EXPERTS: Expert[] = [
+  {
+    id: "plot_assistant",
+    name: "Plot Assistant",
+    title: "Plot Assistant",
+    emoji: "✨",
+    accent: "sky",
+    blurb: "Your all-round farm assistant — ask anything.",
+    starters: [
+      "Give me a snapshot of how my farm is doing right now.",
+      "What should I prioritize on the farm this week?",
+      "Summarize my recent activity and flag anything off.",
+    ],
+    // The generalist sees the whole picture.
+    slices: ["farm", "crops", "livestock", "soil", "activity"],
+    systemPrompt:
+      "You are Plot Assistant, a knowledgeable, friendly general-purpose assistant " +
+      "built into a farm-mapping app. You can help with anything the farmer asks — " +
+      "from interpreting their farm data and planning work to general questions, " +
+      "drafting notes, doing quick calculations, or explaining concepts. You have " +
+      "access to the farmer's current farm context (map, crops, livestock, soil, and " +
+      "recent activity); use it whenever it makes the answer more useful, and say when " +
+      "you're working from it. When a question is clearly specialized (deep agronomy, " +
+      "grazing/animal health, or soil science), give a solid answer and note that the " +
+      "matching specialist on the panel can go deeper. Be clear, practical, and concise; " +
+      "use markdown (bold, bullets, tables) when it aids readability. Never invent farm " +
+      "data that isn't in the context.",
+  },
   {
     id: "agronomist",
     name: "Dr. Maya Okafor",

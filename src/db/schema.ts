@@ -673,3 +673,132 @@ export const grazingEventsRelations = relations(grazingEvents, ({ one }) => ({
     references: [locations.id],
   }),
 }));
+
+// ─── Expert chat ────────────────────────────────────────────────────────────
+// A persisted chat thread between a user and the expert panel. `expertIds` is a
+// JSON string[] of the experts last active on this thread (the picker default
+// when it reopens). Title is generated from the first exchange.
+export const conversations = sqliteTable(
+  "conversations",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    title: text("title"),
+    // JSON string[] of ExpertId, e.g. ["plot_assistant"].
+    expertIds: text("expert_ids").notNull().default("[]"),
+    pinned: integer("pinned", { mode: "boolean" }).notNull().default(false),
+    archived: integer("archived", { mode: "boolean" }).notNull().default(false),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    updatedAt: integer("updated_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("conversations_org_id_idx").on(table.orgId),
+    index("conversations_updated_at_idx").on(table.updatedAt),
+  ],
+);
+
+// One message in a thread. A multi-expert assistant turn is stored as one row
+// per expert (each with its own `expertId`), so they render as separate cards
+// and can be replayed in order. User rows have a null expertId.
+export const chatMessages = sqliteTable(
+  "chat_messages",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["user", "assistant"] }).notNull(),
+    // Which expert authored an assistant message (null for user messages).
+    expertId: text("expert_id"),
+    content: text("content").notNull(),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [index("chat_messages_conversation_id_idx").on(table.conversationId)],
+);
+
+// A file the user attached to a chat message. Kept separate from `attachments`
+// (which is pinned to a map location): chat uploads are transient context, not
+// map pins. Bytes live in the same S3 store (see lib/attachments/storage.ts).
+// `messageId` is filled in when the user message is sent; before that the row is
+// an orphan owned by the conversation. Images get a `visionSummary`; text docs
+// get `extractedText`.
+export const chatAttachments = sqliteTable(
+  "chat_attachments",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    messageId: text("message_id").references(() => chatMessages.id, {
+      onDelete: "cascade",
+    }),
+    fileName: text("file_name").notNull(),
+    storedName: text("stored_name").notNull(),
+    mimeType: text("mime_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    kind: text("kind", { enum: ["image", "document"] }).notNull(),
+    // Extracted text for documents (PDF/CSV/TXT), capped; null for images.
+    extractedText: text("extracted_text"),
+    // Short vision read for images; null for documents.
+    visionSummary: text("vision_summary"),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("chat_attachments_conversation_id_idx").on(table.conversationId),
+    index("chat_attachments_message_id_idx").on(table.messageId),
+  ],
+);
+
+export const conversationsRelations = relations(conversations, ({ one, many }) => ({
+  org: one(organizations, {
+    fields: [conversations.orgId],
+    references: [organizations.id],
+  }),
+  user: one(users, {
+    fields: [conversations.userId],
+    references: [users.id],
+  }),
+  messages: many(chatMessages),
+  attachments: many(chatAttachments),
+}));
+
+export const chatMessagesRelations = relations(chatMessages, ({ one, many }) => ({
+  conversation: one(conversations, {
+    fields: [chatMessages.conversationId],
+    references: [conversations.id],
+  }),
+  attachments: many(chatAttachments),
+}));
+
+export const chatAttachmentsRelations = relations(chatAttachments, ({ one }) => ({
+  conversation: one(conversations, {
+    fields: [chatAttachments.conversationId],
+    references: [conversations.id],
+  }),
+  message: one(chatMessages, {
+    fields: [chatAttachments.messageId],
+    references: [chatMessages.id],
+  }),
+}));
