@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { attachments } from "@/db/schema";
-import { jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, jsonError, requireOrg } from "@/lib/api";
 import {
   MAX_ATTACHMENT_BYTES,
   attachmentKind,
@@ -81,104 +81,147 @@ export async function POST(request: Request) {
   const kind = attachmentKind(file.type || "application/octet-stream");
   if (!kind) return jsonError("That file type isn't supported", 415);
 
-  const bytes = Buffer.from(await file.arrayBuffer());
+  // Context attached to every server log this request emits, so a failure shows
+  // up in Vercel's logs saying *which* upload broke and how — instead of a bare
+  // 500. Enriched with id/storedName/locationId as we learn them below.
+  const logContext: Record<string, unknown> = {
+    route: "POST /api/attachments",
+    orgId: org.id,
+    userId: user.id,
+    fileName: file.name,
+    mimeType: file.type || "application/octet-stream",
+    sizeBytes: file.size,
+    kind,
+    source,
+  };
 
-  // Geo from the client (live capture); backfilled from EXIF for images.
-  let lat = num(form.get("lat"));
-  let lng = num(form.get("lng"));
-  let heading = num(form.get("heading"));
-  const gpsAccuracyM = num(form.get("gpsAccuracy"));
-  const capturedAtMs = num(form.get("capturedAt"));
-  let capturedAt = capturedAtMs !== null ? new Date(capturedAtMs) : null;
-
-  if (kind === "image") {
-    const exif = await readPhotoExif(bytes);
-    if (lat === null) lat = exif.lat;
-    if (lng === null) lng = exif.lng;
-    if (heading === null) heading = exif.heading;
-    if (capturedAt === null) capturedAt = exif.capturedAt;
-  }
-
-  // Resolve the owning location. In-field shots with no asset snap to the nearest.
-  const locationIdRaw = form.get("locationId");
-  let locationId =
-    typeof locationIdRaw === "string" && locationIdRaw ? locationIdRaw : null;
-
-  if (!locationId && source === "live_camera" && lat !== null && lng !== null) {
-    locationId = await resolveNearestLocation(lat, lng, org.id);
-  }
-  if (!locationId) return jsonError("locationId is required", 400);
-
-  const location = await getOwnedLocation(locationId, org.id);
-  if (!location) return jsonError("Location not found", 404);
-
-  // Best-effort place label (never blocks the upload).
-  let placeLabel: string | null = null;
-  if (lat !== null && lng !== null) {
-    placeLabel = await reverseGeocode(lat, lng);
-  }
-
-  const id = nanoid();
-  const storedName = `${id}${safeExtension(file.name)}`;
-
+  // Everything past form validation is wrapped so an unexpected throw from ANY
+  // step (image/EXIF read, geocode, DB read/write, object storage) is logged
+  // with full context and returned as a real reason — never a blank 500 the
+  // client can only render as "something went wrong on our end".
   try {
-    await saveAttachmentFile(storedName, bytes);
+    const bytes = Buffer.from(await file.arrayBuffer());
+
+    // Geo from the client (live capture); backfilled from EXIF for images.
+    let lat = num(form.get("lat"));
+    let lng = num(form.get("lng"));
+    let heading = num(form.get("heading"));
+    const gpsAccuracyM = num(form.get("gpsAccuracy"));
+    const capturedAtMs = num(form.get("capturedAt"));
+    let capturedAt = capturedAtMs !== null ? new Date(capturedAtMs) : null;
+
+    if (kind === "image") {
+      const exif = await readPhotoExif(bytes);
+      if (lat === null) lat = exif.lat;
+      if (lng === null) lng = exif.lng;
+      if (heading === null) heading = exif.heading;
+      if (capturedAt === null) capturedAt = exif.capturedAt;
+    }
+
+    // Resolve the owning location. In-field shots with no asset snap to nearest.
+    const locationIdRaw = form.get("locationId");
+    let locationId =
+      typeof locationIdRaw === "string" && locationIdRaw ? locationIdRaw : null;
+
+    if (!locationId && source === "live_camera" && lat !== null && lng !== null) {
+      locationId = await resolveNearestLocation(lat, lng, org.id);
+    }
+    if (!locationId) return jsonError("locationId is required", 400);
+    logContext.locationId = locationId;
+
+    const location = await getOwnedLocation(locationId, org.id);
+    if (!location) return jsonError("Location not found", 404);
+
+    // Best-effort place label (never blocks the upload).
+    let placeLabel: string | null = null;
+    if (lat !== null && lng !== null) {
+      placeLabel = await reverseGeocode(lat, lng);
+    }
+
+    const id = nanoid();
+    const storedName = `${id}${safeExtension(file.name)}`;
+    logContext.attachmentId = id;
+    logContext.storedName = storedName;
+
+    try {
+      await saveAttachmentFile(storedName, bytes);
+    } catch (error) {
+      // Surface the underlying object-store error (e.g. an R2/S3 403) in the
+      // server logs — otherwise a storage misconfig hides behind a blank 500.
+      console.error("[api] Attachment upload to object storage failed", logContext, error);
+      return jsonError(
+        "Couldn't store the file. Photo storage may be misconfigured (check S3/R2 settings).",
+        500,
+      );
+    }
+
+    const userContext =
+      typeof userContextRaw === "string" && userContextRaw.trim()
+        ? userContextRaw.trim()
+        : null;
+
+    try {
+      await db.insert(attachments).values({
+        id,
+        orgId: org.id,
+        userId: user.id,
+        locationId,
+        fileName: file.name || storedName,
+        storedName,
+        mimeType: file.type || "application/octet-stream",
+        sizeBytes: file.size,
+        kind,
+        caption:
+          typeof caption === "string" && caption.trim() ? caption.trim() : null,
+        source,
+        lat,
+        lng,
+        gpsAccuracyM,
+        heading,
+        capturedAt,
+        placeLabel,
+        userContext,
+        // Images await analysis; everything else is terminal-by-default.
+        analysisStatus: kind === "image" ? "pending" : "done",
+      });
+    } catch (error) {
+      // Surface the real DB error instead of a blank 500. The usual culprit in
+      // production is a stale schema (e.g. "no column named source") when the new
+      // attachment columns / photo_insights table haven't been pushed to the DB.
+      console.error("[api] Attachment DB insert failed", logContext, error);
+      // Don't leave the just-uploaded object orphaned in storage.
+      await deleteAttachmentFile(storedName).catch(() => {});
+      return jsonError(
+        "Couldn't save the attachment. If this keeps happening, the database schema may be out of date (run db:push).",
+        500,
+      );
+    }
+
+    // Read the row back (with its insight relation) for the response. If THIS
+    // throws — e.g. the photo_insights table/relation isn't migrated — the row is
+    // already saved, so don't fail the whole upload: log it and return the row
+    // we wrote without the (still-empty) insight.
+    try {
+      const row = await db.query.attachments.findFirst({
+        where: eq(attachments.id, id),
+        with: { insight: true },
+      });
+      return NextResponse.json(
+        { attachment: serializeAttachment(row!, row!.insight) },
+        { status: 201 },
+      );
+    } catch (error) {
+      console.error("[api] Attachment saved but insight read-back failed", logContext, error);
+      const fallback = await db.query.attachments.findFirst({
+        where: eq(attachments.id, id),
+      });
+      return NextResponse.json(
+        { attachment: serializeAttachment(fallback!, null) },
+        { status: 201 },
+      );
+    }
   } catch (error) {
-    // Surface the underlying object-store error (e.g. an R2/S3 403) in the
-    // server logs — otherwise a storage misconfig hides behind a blank 500.
-    console.error("Attachment upload to object storage failed:", error);
-    return jsonError("Couldn't store the file", 500);
+    console.error("[api] Photo upload failed unexpectedly", logContext, error);
+    return handleApiError(error, "save the photo");
   }
-
-  const userContext =
-    typeof userContextRaw === "string" && userContextRaw.trim()
-      ? userContextRaw.trim()
-      : null;
-
-  try {
-    await db.insert(attachments).values({
-      id,
-      orgId: org.id,
-      userId: user.id,
-      locationId,
-      fileName: file.name || storedName,
-      storedName,
-      mimeType: file.type || "application/octet-stream",
-      sizeBytes: file.size,
-      kind,
-      caption:
-        typeof caption === "string" && caption.trim() ? caption.trim() : null,
-      source,
-      lat,
-      lng,
-      gpsAccuracyM,
-      heading,
-      capturedAt,
-      placeLabel,
-      userContext,
-      // Images await analysis; everything else is terminal-by-default.
-      analysisStatus: kind === "image" ? "pending" : "done",
-    });
-  } catch (error) {
-    // Surface the real DB error instead of a blank 500. The usual culprit in
-    // production is a stale schema (e.g. "no column named source") when the new
-    // attachment columns / photo_insights table haven't been pushed to the DB.
-    console.error("Attachment DB insert failed:", error);
-    // Don't leave the just-uploaded object orphaned in storage.
-    await deleteAttachmentFile(storedName).catch(() => {});
-    return jsonError(
-      "Couldn't save the attachment. If this keeps happening, the database schema may be out of date (run db:push).",
-      500,
-    );
-  }
-
-  const row = await db.query.attachments.findFirst({
-    where: eq(attachments.id, id),
-    with: { insight: true },
-  });
-
-  return NextResponse.json(
-    { attachment: serializeAttachment(row!, row!.insight) },
-    { status: 201 },
-  );
 }
