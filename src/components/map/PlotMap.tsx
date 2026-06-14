@@ -9,8 +9,7 @@ import type {
   MapTouchEvent,
 } from "maplibre-gl";
 import "maplibre-gl/dist/maplibre-gl.css";
-import Icon from "@/components/ui/Icon";
-import Tooltip from "@/components/ui/Tooltip";
+import MapFabCluster from "@/components/map/MapFabCluster";
 import { LOCATION_LAYERS, VERTEX_LAYER } from "@/lib/map/dnd";
 import {
   geometryBounds,
@@ -78,6 +77,11 @@ type PlotMapProps = {
   // Descendant locations that move in relation to the edited parent.
   editChildren?: ChildGeometry[];
   onGeometryChange?: (geometry: GeoJSONGeometry, children: ChildGeometry[]) => void;
+  // Primary map actions, owned by MapShell (they open overlays). Rendered inside
+  // the shared FAB cluster so nothing overlaps.
+  onCapturePhoto?: () => void;
+  onAskExpert?: () => void;
+  fabActionsHidden?: boolean;
 };
 
 const { area: AREA_LAYER, line: LINE_LAYER, point: POINT_LAYER } = LOCATION_LAYERS;
@@ -225,6 +229,9 @@ export default function PlotMap({
   editGeometry,
   editChildren,
   onGeometryChange,
+  onCapturePhoto,
+  onAskExpert,
+  fabActionsHidden,
 }: PlotMapProps) {
   const mapRef = useRef<MapRef | null>(null);
   const [locating, setLocating] = useState(false);
@@ -947,40 +954,16 @@ export default function PlotMap({
         )}
       </Map>
 
-      <div className="pointer-events-none absolute bottom-20 right-3 z-10 flex flex-col items-end gap-2">
-        {locations.length > 0 && (
-          <Tooltip text="Show all my plots" side="left">
-            <button
-              type="button"
-              onClick={fitToData}
-              aria-label="Show all my plots"
-              className="focus-ring pointer-events-auto touch-target flex items-center justify-center rounded-full border border-white/80 bg-white/95 text-stone-600 shadow-lg backdrop-blur active:scale-95"
-            >
-              <Icon name="frame" size={20} />
-            </button>
-          </Tooltip>
-        )}
-        <Tooltip text="Center on my location" side="left">
-          <button
-            type="button"
-            onClick={centerOnGps}
-            aria-label="Center on my location"
-            className="focus-ring pointer-events-auto touch-target flex items-center justify-center rounded-full border border-white/80 bg-white/95 text-stone-600 shadow-lg backdrop-blur active:scale-95"
-          >
-            {locating ? (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-stone-400 border-t-transparent" />
-            ) : (
-              <Icon name="gps" size={20} />
-            )}
-          </button>
-        </Tooltip>
-        {dropMode && (
-          <div className="pointer-events-none flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white shadow-lg">
-            <Icon name="mapPin" size={14} />
-            Tap map to drop a pin
-          </div>
-        )}
-      </div>
+      <MapFabCluster
+        hasPlots={locations.length > 0}
+        locating={locating}
+        dropMode={dropMode}
+        onFitToData={fitToData}
+        onCenterGps={centerOnGps}
+        onCapturePhoto={onCapturePhoto}
+        onAskExpert={onAskExpert}
+        actionsHidden={fabActionsHidden}
+      />
     </div>
   );
 }
