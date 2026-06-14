@@ -4,6 +4,8 @@ import { useMemo, useState } from "react";
 import BottomSheet from "@/components/ui/BottomSheet";
 import Button from "@/components/ui/Button";
 import Callout from "@/components/ui/Callout";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import { formatParseSummary, getPostSaveTip } from "@/lib/coach/tips";
 import type { ResolvedParse } from "@/lib/parse/schema";
 import type { EventType, LocationRecord, PlantingRecord, PlantType } from "@/lib/types";
@@ -106,6 +108,7 @@ export default function ParseConfirmCard({
   const [plantType, setPlantType] = useState<PlantType>(resolved.plantType ?? "crop");
   const [commonName, setCommonName] = useState(resolved.commonName ?? "");
   const [variety, setVariety] = useState(resolved.variety ?? "");
+  const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -162,35 +165,28 @@ export default function ParseConfirmCard({
           }),
         );
 
-        const response = await fetch("/api/log/confirm-batch", {
+        await apiFetch("/api/log/confirm-batch", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ entries: [primaryEntry, ...extraEntries] }),
+          body: { entries: [primaryEntry, ...extraEntries] },
         });
 
-        if (!response.ok) {
-          const data = await response.json();
-          throw new Error(data.error ?? "Failed to save");
-        }
-
-        onConfirm(`Saved ${1 + extraEntries.length} logs. ${getPostSaveTip(type)}`);
+        const batchCount = 1 + extraEntries.length;
+        toast.success(`Saved ${batchCount} entries`);
+        onConfirm(`Saved ${batchCount} logs. ${getPostSaveTip(type)}`);
         return;
       }
 
-      const response = await fetch("/api/log/confirm", {
+      await apiFetch("/api/log/confirm", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(primaryEntry),
+        body: primaryEntry,
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error ?? "Failed to save");
-      }
-
+      toast.success("Logged");
       onConfirm(getPostSaveTip(type));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      const message = getErrorMessage(err, "Couldn't save this log.");
+      setError(message);
+      toast.error("Couldn't save log", { description: message });
     } finally {
       setSaving(false);
     }

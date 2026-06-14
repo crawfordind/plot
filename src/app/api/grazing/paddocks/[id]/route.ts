@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
 import { paddocks } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedPaddock } from "@/lib/ownership";
 import { serializePaddock } from "@/lib/serializers";
 import { updatePaddockSchema } from "@/lib/validators";
@@ -46,7 +46,7 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ paddock: serializePaddock(row!) });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to update paddock", 500);
+    return handleApiError(error, "update paddock");
   }
 }
 

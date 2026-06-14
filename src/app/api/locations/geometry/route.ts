@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
 import { locations } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { batchGeometrySchema } from "@/lib/validators";
 
 // PATCH /api/locations/geometry — update many location geometries in one call.
@@ -39,6 +39,6 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ updated: applicable.length });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to update geometries", 500);
+    return handleApiError(error, "update geometries");
   }
 }

@@ -5,6 +5,8 @@ import LocationField from "@/components/map/LocationField";
 import { useMapInteraction } from "@/components/map/MapInteractionContext";
 import BottomSheet from "@/components/ui/BottomSheet";
 import Button from "@/components/ui/Button";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type { EventType, LocationRecord, PlantingRecord } from "@/lib/types";
 
 type EventFormProps = {
@@ -36,6 +38,7 @@ export default function EventForm({
   onSaved,
   onClose,
 }: EventFormProps) {
+  const toast = useToast();
   const { picking } = useMapInteraction();
   const [type, setType] = useState<EventType>("observe");
   const [locationId, setLocationId] = useState(defaultLocationId ?? "");
@@ -62,10 +65,9 @@ export default function EventForm({
     setError(null);
 
     try {
-      const response = await fetch("/api/events", {
+      await apiFetch("/api/events", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           type,
           locationId: locationId || undefined,
           plantingId: plantingId || undefined,
@@ -74,32 +76,29 @@ export default function EventForm({
           unit: unit || undefined,
           amount: amount ? Number(amount) : undefined,
           notes: notes || undefined,
-        }),
+        },
       });
-
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error ?? "Failed to save event");
-      }
 
       // A cross also records a parent×parent entry so it shows in lineage.
       if (type === "cross" && motherPlantingId && fatherPlantingId) {
-        await fetch("/api/crosses", {
+        await apiFetch("/api/crosses", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+          body: {
             motherPlantingId,
             fatherPlantingId,
             occurredAt: new Date(occurredAt).toISOString(),
             notes: notes || undefined,
-          }),
+          },
         });
       }
 
+      toast.success("Log saved");
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save event");
+      const message = getErrorMessage(err, "Couldn't save this log.");
+      setError(message);
+      toast.error("Couldn't save log", { description: message });
     } finally {
       setSaving(false);
     }

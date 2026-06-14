@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { seasons } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedLocation } from "@/lib/ownership";
 import { serializeSeason } from "@/lib/serializers";
 import { createSeasonSchema } from "@/lib/validators";
@@ -47,6 +47,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ season: serializeSeason(row!) }, { status: 201 });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to create season", 500);
+    return handleApiError(error, "create season");
   }
 }

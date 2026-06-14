@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, requireOrg } from "@/lib/api";
 import { getMembershipsForUser, setActiveOrg } from "@/lib/auth";
 import { createOrganization } from "@/lib/orgs";
 import { createOrgSchema } from "@/lib/validators";
@@ -33,6 +33,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ organization: created }, { status: 201 });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to create workspace", 500);
+    return handleApiError(error, "create workspace");
   }
 }

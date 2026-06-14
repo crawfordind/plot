@@ -12,6 +12,48 @@ export function handleZodError(error: ZodError) {
   return jsonError(message);
 }
 
+// A catch-all for route handlers. Turns whatever was thrown into the most
+// specific *and safe* response we can: validation errors and malformed JSON
+// become 4xx with a real reason; database constraint violations become a 409;
+// everything else is logged (with the action for triage) and returns a generic
+// 500 so we never leak internals to the client. Usage:
+//
+//   } catch (error) {
+//     return handleApiError(error, "create location");
+//   }
+//
+// `action` is a short verb phrase ("create location", "save move") used both in
+// the server log and to phrase the fallback message.
+export function handleApiError(error: unknown, action: string) {
+  if (error instanceof ZodError) {
+    return handleZodError(error);
+  }
+
+  // `request.json()` throws a SyntaxError on a malformed/empty body.
+  if (error instanceof SyntaxError) {
+    return jsonError("The request was malformed and couldn't be read.", 400);
+  }
+
+  // SQLite/libSQL surfaces constraint failures with codes in the message.
+  const raw = error instanceof Error ? error.message : String(error);
+  if (/UNIQUE constraint failed/i.test(raw)) {
+    return jsonError("That already exists — please use a different value.", 409);
+  }
+  if (/FOREIGN KEY constraint failed/i.test(raw)) {
+    return jsonError(
+      "That references something that no longer exists. Refresh and try again.",
+      409,
+    );
+  }
+  if (/NOT NULL constraint failed/i.test(raw)) {
+    return jsonError("A required field was missing.", 400);
+  }
+
+  // Unknown / unexpected — log with context for triage, return a safe message.
+  console.error(`[api] Failed to ${action}:`, error);
+  return jsonError(`Couldn't ${action}. Please try again in a moment.`, 500);
+}
+
 // Auth-only gate (the human account). Use for account/session endpoints.
 export async function requireUser() {
   const user = await getCurrentUser();

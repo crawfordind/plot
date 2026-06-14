@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
 import { varieties } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedVariety } from "@/lib/ownership";
 import { serializeVariety } from "@/lib/serializers";
 import { updateVarietySchema } from "@/lib/validators";
@@ -42,7 +42,7 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ variety: serializeVariety(row!) });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to update variety", 500);
+    return handleApiError(error, "update variety");
   }
 }
 

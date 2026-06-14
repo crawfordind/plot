@@ -5,6 +5,7 @@ import BottomSheet from "@/components/ui/BottomSheet";
 import Button from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import Icon from "@/components/ui/Icon";
+import { apiFetch } from "@/lib/client";
 import type { GeocodeResult } from "@/lib/geocode";
 
 type NewFarmSheetProps = {
@@ -43,11 +44,11 @@ export default function NewFarmSheet({ onStartDraw, onLocate, onClose }: NewFarm
     setLoading(true);
     const timer = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/geocode?q=${encodeURIComponent(q)}`, {
-          signal: controller.signal,
-        });
-        const data = await res.json();
-        setResults(res.ok ? (data.results ?? []) : []);
+        const data = await apiFetch<{ results: GeocodeResult[] }>(
+          `/api/geocode?q=${encodeURIComponent(q)}`,
+          { signal: controller.signal },
+        );
+        setResults(data.results ?? []);
         setActiveIndex(-1);
       } catch {
         // Aborted or network error — leave prior results untouched.

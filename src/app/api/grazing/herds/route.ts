@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { herds } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, requireOrg } from "@/lib/api";
 import { serializeHerd } from "@/lib/serializers";
 import { createHerdSchema } from "@/lib/validators";
 
@@ -44,6 +44,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ herd: serializeHerd(row!) }, { status: 201 });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to create herd", 500);
+    return handleApiError(error, "create herd");
   }
 }

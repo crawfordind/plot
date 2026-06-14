@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { handleZodError, jsonError, requireOrg, requireRole } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg, requireRole } from "@/lib/api";
 import { removeMember, setMemberRole } from "@/lib/orgs";
 import { setRoleSchema } from "@/lib/validators";
 
@@ -21,7 +21,7 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ ok: true });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to update role", 500);
+    return handleApiError(error, "update role");
   }
 }
 

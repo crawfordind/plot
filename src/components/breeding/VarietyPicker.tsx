@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type { PlantType, VarietyRecord } from "@/lib/types";
 
 type VarietyPickerProps = {
@@ -20,6 +22,7 @@ export default function VarietyPicker({
   onChange,
   onCreated,
 }: VarietyPickerProps) {
+  const toast = useToast();
   const options = varieties.filter((v) => v.plantType === plantType);
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -30,20 +33,21 @@ export default function VarietyPicker({
     if (!name.trim() || saving) return;
     setSaving(true);
     setError(null);
+    const trimmedName = name.trim();
     try {
-      const res = await fetch("/api/varieties", {
+      const data = await apiFetch<{ variety: VarietyRecord }>("/api/varieties", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), plantType }),
+        body: { name: trimmedName, plantType },
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed");
+      toast.success(`${trimmedName} added`);
       onChange(data.variety.id, data.variety.name);
       onCreated();
       setCreating(false);
       setName("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed");
+      const message = getErrorMessage(err, "Couldn't create this variety.");
+      setError(message);
+      toast.error("Couldn't create variety", { description: message });
     } finally {
       setSaving(false);
     }

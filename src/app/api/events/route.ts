@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { events } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { findUnownedRef } from "@/lib/ownership";
 import { serializeEvent } from "@/lib/serializers";
 import { createEventSchema } from "@/lib/validators";
@@ -71,6 +71,6 @@ export async function POST(request: Request) {
     if (error instanceof ZodError) {
       return handleZodError(error);
     }
-    return NextResponse.json({ error: "Failed to create event" }, { status: 500 });
+    return handleApiError(error, "create event");
   }
 }

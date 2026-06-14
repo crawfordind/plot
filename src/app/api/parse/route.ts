@@ -77,7 +77,7 @@ export async function POST(request: Request) {
       );
     }
     if (error instanceof SyntaxError) {
-      return jsonError("Failed to parse model response", 502);
+      return jsonError("The AI gave an unexpected response. Please try again.", 502);
     }
     if (error instanceof Error) {
       if (error.message.includes("OPENROUTER_API_KEY")) {
@@ -85,6 +85,6 @@ export async function POST(request: Request) {
       }
       return jsonError(error.message, 502);
     }
-    return jsonError("Parse failed", 500);
+    return jsonError("The AI couldn't process that. Please try again.", 500);
   }
 }

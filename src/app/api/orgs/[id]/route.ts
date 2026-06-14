@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { handleZodError, jsonError, requireOrg, requireRole } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg, requireRole } from "@/lib/api";
 import { renameOrganization } from "@/lib/orgs";
 import { renameOrgSchema } from "@/lib/validators";
 
@@ -22,6 +22,6 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ ok: true, name });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to rename workspace", 500);
+    return handleApiError(error, "rename workspace");
   }
 }

@@ -4,6 +4,8 @@ import { useState } from "react";
 import Button from "@/components/ui/Button";
 import DeleteButton from "@/components/ui/DeleteButton";
 import Sheet from "@/components/ui/Sheet";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type {
   GrazingEventRecord,
   HerdRecord,
@@ -43,6 +45,7 @@ export default function GrazingRecordEditSheet({
   onDeleted,
   onClose,
 }: GrazingRecordEditSheetProps) {
+  const toast = useToast();
   const paddocks = locations.filter((l) => l.type === "paddock");
   const herd = herds.find((h) => h.id === record.herdId);
   const [locationId, setLocationId] = useState(record.locationId);
@@ -75,32 +78,33 @@ export default function GrazingRecordEditSheet({
       if (inIso) body.movedInAt = inIso;
       body.movedOutAt = fromDateInput(movedOutAt);
 
-      const res = await fetch(`/api/grazing/events/${record.id}`, {
+      await apiFetch(`/api/grazing/events/${record.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
+        body,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Failed to save");
+      toast.success("Grazing record saved");
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      const message = getErrorMessage(err, "Couldn't save this record.");
+      setError(message);
+      toast.error("Couldn't save record", { description: message });
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete() {
-    const res = await fetch(`/api/grazing/events/${record.id}`, {
-      method: "DELETE",
-    });
-    if (!res.ok) {
-      const data = await res.json();
-      throw new Error(data.error ?? "Failed to delete");
+    try {
+      await apiFetch(`/api/grazing/events/${record.id}`, { method: "DELETE" });
+      toast.success("Grazing record deleted");
+      onDeleted();
+      onClose();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't delete this record.");
+      toast.error("Couldn't delete record", { description: message });
+      // Do NOT re-throw — DeleteButton's onDelete must not propagate errors.
     }
-    onDeleted();
-    onClose();
   }
 
   const field =

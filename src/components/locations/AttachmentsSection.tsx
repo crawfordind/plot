@@ -11,6 +11,8 @@ import {
 import PhotoInsightView, {
   SUBJECT_LABEL,
 } from "@/components/locations/PhotoInsightView";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type { AttachmentRecord, AttachmentSource } from "@/lib/types";
 
 type AttachmentsSectionProps = {
@@ -39,6 +41,7 @@ function formatSize(bytes: number): string {
 export default function AttachmentsSection({
   locationId,
 }: AttachmentsSectionProps) {
+  const toast = useToast();
   const [items, setItems] = useState<AttachmentRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
@@ -55,8 +58,12 @@ export default function AttachmentsSection({
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch(`/api/attachments?locationId=${locationId}`);
-      if (res.ok) setItems((await res.json()).attachments);
+      const data = await apiFetch<{ attachments: AttachmentRecord[] }>(
+        `/api/attachments?locationId=${locationId}`,
+      );
+      setItems(data.attachments);
+    } catch {
+      // Non-fatal background refresh — leave the stale list visible.
     } finally {
       setLoading(false);
     }
@@ -88,27 +95,17 @@ export default function AttachmentsSection({
         return next;
       });
       try {
-        const res = await fetch(`/api/attachments/${id}/analyze`, {
-          method: "POST",
-        });
-        if (!res.ok) {
-          const data = await res.json().catch(() => ({}));
-          setAnalyzeErrors((prev) => ({
-            ...prev,
-            [id]: data.error ?? `Analysis failed (${res.status})`,
-          }));
-        }
-      } catch {
-        setAnalyzeErrors((prev) => ({
-          ...prev,
-          [id]: "Analysis failed — network error",
-        }));
+        await apiFetch(`/api/attachments/${id}/analyze`, { method: "POST" });
+      } catch (err) {
+        const message = getErrorMessage(err, "Analysis failed");
+        setAnalyzeErrors((prev) => ({ ...prev, [id]: message }));
+        toast.error("Couldn't analyze photo", { description: message });
       } finally {
         setPendingFor(id, false);
         await load();
       }
     },
-    [load, setPendingFor],
+    [load, setPendingFor, toast],
   );
 
   async function handleFiles(
@@ -147,22 +144,10 @@ export default function AttachmentsSection({
         if (geo.heading !== null) form.append("heading", String(geo.heading));
         if (geo.capturedAt !== null)
           form.append("capturedAt", String(geo.capturedAt));
-        const res = await fetch("/api/attachments", {
-          method: "POST",
-          body: form,
-        });
-        if (!res.ok) {
-          if (res.status === 413) {
-            throw new Error(
-              "That file is too large to upload, even after resizing.",
-            );
-          }
-          const data = await res.json().catch(() => ({}));
-          throw new Error(data.error ?? "Upload failed");
-        }
-        const { attachment } = (await res.json()) as {
-          attachment: AttachmentRecord;
-        };
+        const { attachment } = await apiFetch<{ attachment: AttachmentRecord }>(
+          "/api/attachments",
+          { method: "POST", body: form },
+        );
         if (attachment.kind === "image") newImageIds.push(attachment.id);
       }
       await load();
@@ -170,10 +155,17 @@ export default function AttachmentsSection({
       if (newImageIds.length > 0) {
         setSelectedId(newImageIds[newImageIds.length - 1]);
         setContextDraft("");
+        toast.success(
+          newImageIds.length === 1 ? "Photo saved" : `${newImageIds.length} photos saved`,
+        );
+      } else {
+        toast.success("File uploaded");
       }
       await Promise.all(newImageIds.map((id) => analyze(id)));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      const message = getErrorMessage(err, "Upload failed");
+      setError(message);
+      toast.error("Couldn't upload file", { description: message });
     } finally {
       setUploading(false);
       if (cameraRef.current) cameraRef.current.value = "";
@@ -184,10 +176,9 @@ export default function AttachmentsSection({
   async function saveContextAndAnalyze(id: string) {
     setSavingContext(true);
     try {
-      await fetch(`/api/attachments/${id}`, {
+      await apiFetch(`/api/attachments/${id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userContext: contextDraft }),
+        body: { userContext: contextDraft },
       });
     } finally {
       setSavingContext(false);
@@ -198,7 +189,15 @@ export default function AttachmentsSection({
   async function remove(id: string) {
     setItems((prev) => prev.filter((a) => a.id !== id));
     if (selectedId === id) setSelectedId(null);
-    await fetch(`/api/attachments/${id}`, { method: "DELETE" }).catch(() => {});
+    try {
+      await apiFetch(`/api/attachments/${id}`, { method: "DELETE" });
+      toast.success("Attachment deleted");
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't delete attachment");
+      toast.error("Couldn't delete attachment", { description: message });
+      // Reload to restore the item in the list since the delete failed.
+      await load();
+    }
   }
 
   function openItem(item: AttachmentRecord) {

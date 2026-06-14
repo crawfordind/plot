@@ -4,6 +4,8 @@ import { useState } from "react";
 import Button from "@/components/ui/Button";
 import Callout from "@/components/ui/Callout";
 import { Input, Textarea } from "@/components/ui/Field";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type { GrazingSnapshot } from "@/lib/grazing/status";
 import type { HerdRecord, LocationRecord } from "@/lib/types";
 
@@ -41,6 +43,7 @@ export default function MoveCapture({
   onMoved,
   onNeedSetup,
 }: MoveCaptureProps) {
+  const toast = useToast();
   const paddocks = locations.filter((l) => l.type === "paddock");
   const [text, setText] = useState("");
   const [parsing, setParsing] = useState(false);
@@ -73,13 +76,10 @@ export default function MoveCapture({
     setParsing(true);
     setError(null);
     try {
-      const response = await fetch("/api/grazing/parse", {
+      const data = await apiFetch<{ clarifyingQuestion?: string; resolved?: Resolved }>("/api/grazing/parse", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawText, clarification: answer }),
+        body: { rawText, clarification: answer },
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not read that");
 
       if (data.clarifyingQuestion && !answer) {
         setPendingText(rawText);
@@ -92,7 +92,9 @@ export default function MoveCapture({
       setResolved(data.resolved as Resolved);
       setText("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not read that");
+      const message = getErrorMessage(err, "Could not read that");
+      setError(message);
+      toast.error("Could not read that", { description: message });
     } finally {
       setParsing(false);
     }
@@ -108,10 +110,9 @@ export default function MoveCapture({
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch("/api/grazing/move", {
+      await apiFetch("/api/grazing/move", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           herdId: resolved.herdId,
           toLocationId: resolved.toLocationId ?? undefined,
           occurredAt: resolved.occurredAt ?? undefined,
@@ -121,14 +122,15 @@ export default function MoveCapture({
           heightOutIn: resolved.heightOutIn ?? undefined,
           forageSpecies: resolved.forageSpecies ?? undefined,
           notes: resolved.notes ?? undefined,
-        }),
+        },
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Failed to record move");
+      toast.success("Move recorded");
       setResolved(null);
       onMoved();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to record move");
+      const message = getErrorMessage(err, "Couldn't record this move.");
+      setError(message);
+      toast.error("Couldn't record move", { description: message });
     } finally {
       setSaving(false);
     }

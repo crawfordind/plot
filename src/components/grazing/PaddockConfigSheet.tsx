@@ -5,6 +5,8 @@ import BottomSheet from "@/components/ui/BottomSheet";
 import Button from "@/components/ui/Button";
 import Callout from "@/components/ui/Callout";
 import { Field, Input } from "@/components/ui/Field";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type { PaddockRecord } from "@/lib/types";
 
 type PaddockConfigSheetProps = {
@@ -38,6 +40,7 @@ export default function PaddockConfigSheet({
     config?.stopHeightIn != null ? String(config.stopHeightIn) : "3",
   );
   const [acres, setAcres] = useState(config?.acres != null ? String(config.acres) : "");
+  const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -45,24 +48,24 @@ export default function PaddockConfigSheet({
     setSaving(true);
     setError(null);
     try {
-      const response = await fetch("/api/grazing/paddocks", {
+      await apiFetch("/api/grazing/paddocks", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           locationId,
           primaryForage: primaryForage.trim() || undefined,
           restTargetDays: numOrUndef(restTargetDays),
           startHeightIn: numOrUndef(startHeightIn),
           stopHeightIn: numOrUndef(stopHeightIn),
           acres: numOrUndef(acres),
-        }),
+        },
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Failed to save");
+      toast.success("Paddock settings saved");
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      const message = getErrorMessage(err, "Couldn't save paddock settings.");
+      setError(message);
+      toast.error("Couldn't save paddock config", { description: message });
     } finally {
       setSaving(false);
     }

@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type { PlantType, VarietyRecord } from "@/lib/types";
 
 const PLANT_TYPES: { value: PlantType; label: string }[] = [
@@ -19,6 +21,7 @@ export default function VarietyManager({
   varieties: VarietyRecord[];
   onChanged: () => void;
 }) {
+  const toast = useToast();
   const [name, setName] = useState("");
   const [plantType, setPlantType] = useState<PlantType>("crop");
   const [notes, setNotes] = useState("");
@@ -27,27 +30,38 @@ export default function VarietyManager({
   async function add() {
     if (!name.trim() || saving) return;
     setSaving(true);
+    const trimmedName = name.trim();
     try {
-      await fetch("/api/varieties", {
+      await apiFetch<{ variety: VarietyRecord }>("/api/varieties", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
+        body: {
+          name: trimmedName,
           plantType,
           notes: notes.trim() || undefined,
-        }),
+        },
       });
+      toast.success(`${trimmedName} added`);
       setName("");
       setNotes("");
       onChanged();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't add this variety.");
+      toast.error("Couldn't add variety", { description: message });
     } finally {
       setSaving(false);
     }
   }
 
   async function remove(id: string) {
-    await fetch(`/api/varieties/${id}`, { method: "DELETE" });
-    onChanged();
+    const variety = varieties.find((v) => v.id === id);
+    try {
+      await apiFetch(`/api/varieties/${id}`, { method: "DELETE" });
+      toast.success(`${variety?.name ?? "Variety"} deleted`);
+      onChanged();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't delete this variety.");
+      toast.error("Couldn't delete variety", { description: message });
+    }
   }
 
   const field =

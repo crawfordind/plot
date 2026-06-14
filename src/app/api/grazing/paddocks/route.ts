@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { paddocks } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedLocation } from "@/lib/ownership";
 import { serializePaddock } from "@/lib/serializers";
 import { createPaddockSchema } from "@/lib/validators";
@@ -69,6 +69,6 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to save paddock", 500);
+    return handleApiError(error, "save paddock");
   }
 }

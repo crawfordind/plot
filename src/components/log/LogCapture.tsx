@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import ParseConfirmCard from "@/components/log/ParseConfirmCard";
 import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import { getSeasonLabel } from "@/lib/coach/season";
 import type { ResolvedParse } from "@/lib/parse/schema";
 import type { LocationRecord, PlantingRecord } from "@/lib/types";
@@ -27,6 +29,12 @@ type ParseState = {
   coachTip?: string;
 };
 
+type ParseResponse = {
+  resolved: ResolvedParse;
+  additionalResolved?: ResolvedParse[];
+  coachTip?: string;
+};
+
 const quickStarters = [
   { label: "Sow", text: "Sowed  in  today" },
   { label: "Water", text: "Watered  at  today" },
@@ -46,6 +54,7 @@ export default function LogCapture({
   collapsed: collapsedProp,
   onCollapsedChange,
 }: LogCaptureProps) {
+  const toast = useToast();
   const [text, setText] = useState("");
   const [parsing, setParsing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,21 +91,14 @@ export default function LogCapture({
     setError(null);
 
     try {
-      const response = await fetch("/api/parse", {
+      const data = await apiFetch<ParseResponse>("/api/parse", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           rawText,
           selectedLocationId: selectedLocationId ?? undefined,
           clarification: answer,
-        }),
+        },
       });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error ?? "Parse failed");
-      }
 
       if (data.resolved.clarifyingQuestion && !answer) {
         setPendingRawText(rawText);
@@ -115,7 +117,9 @@ export default function LogCapture({
       });
       setText("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Parse failed");
+      const message = getErrorMessage(err, "Couldn't understand your log.");
+      setError(message);
+      toast.error("Couldn't parse log", { description: message });
     } finally {
       setParsing(false);
     }

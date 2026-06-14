@@ -5,6 +5,8 @@ import LocationTypePicker from "@/components/locations/LocationTypePicker";
 import BottomSheet from "@/components/ui/BottomSheet";
 import Button from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import { locationTypeLabel } from "@/lib/locations/catalog";
 import type { LocationType } from "@/lib/types";
 
@@ -27,6 +29,7 @@ export default function LocationPanel({
   const [zone, setZone] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   if (!pendingCoords) return null;
 
@@ -36,10 +39,9 @@ export default function LocationPanel({
     setError(null);
 
     try {
-      const response = await fetch("/api/locations", {
+      await apiFetch("/api/locations", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           name,
           type,
           zone: zone || undefined,
@@ -49,19 +51,17 @@ export default function LocationPanel({
             type: "Point",
             coordinates: pendingCoords,
           },
-        }),
+        },
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error ?? "Failed to save location");
-      }
-
+      toast.success(`${name.trim() || locationTypeLabel(type)} added`);
       setName("");
       setZone("");
       onCreated();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save location");
+      const message = getErrorMessage(err, "Couldn't save this location.");
+      setError(message);
+      toast.error("Couldn't save location", { description: message });
     } finally {
       setSaving(false);
     }
