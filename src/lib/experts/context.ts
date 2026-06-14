@@ -10,6 +10,7 @@ import {
   plantings,
   seasons,
 } from "@/db/schema";
+import { farmCenter, getFarmEnvironment } from "@/lib/weather/environment";
 import type { ContextSlice } from "./personas";
 
 // A compact, human-readable digest of an org's farm, sliced by topic. We build
@@ -86,6 +87,15 @@ async function buildSnapshot(orgId: string): Promise<Snapshot> {
   const nameById = new Map(locationRows.map((l) => [l.id, l.name]));
   const sections = {} as Record<ContextSlice, string>;
   const chips = {} as Record<ContextSlice, string[]>;
+
+  // --- environment (date, place, weather & forecast) ---
+  // Best-effort and self-caching; getFarmEnvironment never throws.
+  {
+    const center = farmCenter(locationRows.map((l) => l.geometry));
+    const env = await getFarmEnvironment(center);
+    sections.environment = env.text;
+    chips.environment = env.chips;
+  }
 
   // --- farm ---
   {
@@ -216,6 +226,7 @@ export async function buildFarmContext(
   const wanted = [...new Set(slices)];
 
   const labels: Record<ContextSlice, string> = {
+    environment: "DATE, PLACE & WEATHER",
     farm: "FARM MAP",
     crops: "CROPS & PLANTINGS",
     livestock: "LIVESTOCK & GRAZING",
