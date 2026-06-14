@@ -1,9 +1,16 @@
-import sharp from "sharp";
 import exifr from "exifr";
 
 // Server-side image prep for the vision LLM. We never alter the stored original —
 // these helpers produce an in-memory, model-ready copy and read metadata off the
 // uploaded bytes.
+//
+// NOTE: `sharp` is loaded lazily (dynamic import inside prepareForVision) rather
+// than at the top of this module ON PURPOSE. sharp is a native addon that can
+// fail to load on some hosts (e.g. a serverless runtime missing libvips). The
+// photo *upload* path only needs readPhotoExif (pure-JS exifr) — it must not
+// crash just because the heavier vision-prep dependency can't load. Keeping the
+// import lazy means an unavailable sharp only affects analysis, where it's
+// caught, not every upload.
 
 // Longest edge we send to the model. Field photos are often 12+ MP; downscaling
 // keeps token cost and latency sane without losing the detail the model needs.
@@ -91,6 +98,10 @@ export type PreparedImage = {
 // Downscale, draw the fixed grid, and return a base64 JPEG data URL ready to drop
 // into an OpenRouter vision message.
 export async function prepareForVision(bytes: Buffer): Promise<PreparedImage> {
+  // Lazy-load the native addon so a host where it can't load only breaks
+  // analysis (caught upstream), never an upload that just reads EXIF.
+  const sharp = (await import("sharp")).default;
+
   // EXIF-rotate, downscale (never upscale), and normalise to RGB JPEG.
   const base = sharp(bytes)
     .rotate()

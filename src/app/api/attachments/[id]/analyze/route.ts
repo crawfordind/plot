@@ -29,6 +29,18 @@ export async function POST(_request: Request, { params }: Params) {
           503,
         );
       }
+      // Native image library (sharp/libvips) failed to load on the host. The
+      // photo itself uploaded fine — only the AI read couldn't run.
+      if (
+        /sharp|libvips|ERR_DLOPEN/i.test(error.message) ||
+        error.message.includes("Could not load")
+      ) {
+        console.error("[api] sharp/libvips failed to load during analysis:", error);
+        return jsonError(
+          "Photo analysis is temporarily unavailable on the server. Your photo was saved.",
+          503,
+        );
+      }
       return jsonError(error.message, 502);
     }
     return jsonError("Analysis failed", 500);
