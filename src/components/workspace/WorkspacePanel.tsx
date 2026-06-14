@@ -5,6 +5,8 @@ import BottomSheet from "@/components/ui/BottomSheet";
 import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import { Input } from "@/components/ui/Field";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type {
   MemberRecord,
   OrganizationRecord,
@@ -23,6 +25,7 @@ const ROLE_LABEL: Record<OrgRole, string> = {
 };
 
 export default function WorkspacePanel({ onClose }: WorkspacePanelProps) {
+  const toast = useToast();
   const [orgs, setOrgs] = useState<OrganizationRecord[]>([]);
   const [activeOrgId, setActiveOrgId] = useState<string | null>(null);
   const [members, setMembers] = useState<MemberRecord[]>([]);
@@ -42,21 +45,15 @@ export default function WorkspacePanel({ onClose }: WorkspacePanelProps) {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [orgsRes, membersRes] = await Promise.all([
-        fetch("/api/orgs"),
-        fetch("/api/orgs/members"),
+      const [orgsData, membersData] = await Promise.all([
+        apiFetch<{ organizations: OrganizationRecord[]; activeOrgId: string | null }>("/api/orgs"),
+        apiFetch<{ members: MemberRecord[]; invites: PendingInviteRecord[]; role: OrgRole }>("/api/orgs/members"),
       ]);
-      if (orgsRes.ok) {
-        const d = await orgsRes.json();
-        setOrgs(d.organizations);
-        setActiveOrgId(d.activeOrgId);
-      }
-      if (membersRes.ok) {
-        const d = await membersRes.json();
-        setMembers(d.members);
-        setInvites(d.invites);
-        setMyRole(d.role);
-      }
+      setOrgs(orgsData.organizations);
+      setActiveOrgId(orgsData.activeOrgId);
+      setMembers(membersData.members);
+      setInvites(membersData.invites);
+      setMyRole(membersData.role);
     } finally {
       setLoading(false);
     }
@@ -71,28 +68,31 @@ export default function WorkspacePanel({ onClose }: WorkspacePanelProps) {
   async function switchTo(orgId: string) {
     if (orgId === activeOrgId) return;
     setBusy(true);
-    const res = await fetch("/api/orgs/switch", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orgId }),
-    });
-    if (res.ok) window.location.reload();
-    else setBusy(false);
+    try {
+      await apiFetch("/api/orgs/switch", { method: "POST", body: { orgId } });
+      toast.success("Workspace switched");
+      window.location.reload();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't switch workspace.");
+      setError(message);
+      toast.error("Couldn't switch workspace", { description: message });
+      setBusy(false);
+    }
   }
 
   async function createWorkspace(e: React.FormEvent) {
     e.preventDefault();
     if (!newOrgName.trim()) return;
     setBusy(true);
-    const res = await fetch("/api/orgs", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: newOrgName.trim() }),
-    });
-    if (res.ok) window.location.reload();
-    else {
+    try {
+      await apiFetch("/api/orgs", { method: "POST", body: { name: newOrgName.trim() } });
+      toast.success("Workspace created");
+      window.location.reload();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't create the workspace.");
+      setError(message);
+      toast.error("Couldn't create workspace", { description: message });
       setBusy(false);
-      setError("Couldn't create the workspace.");
     }
   }
 
@@ -103,24 +103,24 @@ export default function WorkspacePanel({ onClose }: WorkspacePanelProps) {
     setError(null);
     setNotice(null);
     try {
-      const res = await fetch("/api/orgs/members", {
+      const data = await apiFetch<{ status?: string }>("/api/orgs/members", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+        body: { email: inviteEmail.trim(), role: inviteRole },
       });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error ?? "Couldn't invite");
       setInviteEmail("");
-      setNotice(
+      const notice =
         data.status === "added"
           ? "Added to the workspace."
           : data.status === "already_member"
             ? "They're already a member."
-            : "Invite sent — they'll join when they sign up.",
-      );
+            : "Invite sent — they'll join when they sign up.";
+      setNotice(notice);
+      toast.success(notice);
       await load();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Couldn't invite");
+      const message = getErrorMessage(err, "Couldn't send invite.");
+      setError(message);
+      toast.error("Couldn't send invite", { description: message });
     } finally {
       setBusy(false);
     }
@@ -128,35 +128,49 @@ export default function WorkspacePanel({ onClose }: WorkspacePanelProps) {
 
   async function removeMember(userId: string) {
     setBusy(true);
-    const res = await fetch(`/api/orgs/members/${userId}`, { method: "DELETE" });
-    if (res.ok) await load();
-    else {
-      const d = await res.json().catch(() => ({}));
-      setError(d.error ?? "Couldn't remove member");
+    try {
+      await apiFetch(`/api/orgs/members/${userId}`, { method: "DELETE" });
+      toast.success("Member removed");
+      await load();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't remove member.");
+      setError(message);
+      toast.error("Couldn't remove member", { description: message });
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   async function changeRole(userId: string, role: OrgRole) {
     setBusy(true);
-    const res = await fetch(`/api/orgs/members/${userId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role }),
-    });
-    if (res.ok) await load();
-    else {
-      const d = await res.json().catch(() => ({}));
-      setError(d.error ?? "Couldn't change role");
+    try {
+      await apiFetch(`/api/orgs/members/${userId}`, {
+        method: "PATCH",
+        body: { role },
+      });
+      toast.success(`Role changed to ${ROLE_LABEL[role]}`);
+      await load();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't change role.");
+      setError(message);
+      toast.error("Couldn't change role", { description: message });
+    } finally {
+      setBusy(false);
     }
-    setBusy(false);
   }
 
   async function cancelInvite(id: string) {
     setBusy(true);
-    await fetch(`/api/orgs/invites/${id}`, { method: "DELETE" });
-    await load();
-    setBusy(false);
+    try {
+      await apiFetch(`/api/orgs/invites/${id}`, { method: "DELETE" });
+      await load();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't cancel invite.");
+      setError(message);
+      toast.error("Couldn't cancel invite", { description: message });
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

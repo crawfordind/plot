@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { handleZodError, jsonError, requireOrg, requireRole } from "@/lib/api";
+import { handleApiError, handleZodError, requireOrg, requireRole } from "@/lib/api";
 import { inviteToOrg, listMembers, listPendingInvites } from "@/lib/orgs";
 import { inviteMemberSchema } from "@/lib/validators";
 
@@ -30,6 +30,6 @@ export async function POST(request: Request) {
     return NextResponse.json(result, { status: 201 });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to invite", 500);
+    return handleApiError(error, "invite");
   }
 }

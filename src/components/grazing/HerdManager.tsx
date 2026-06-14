@@ -4,6 +4,8 @@ import { useState } from "react";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
 import { Field, Input } from "@/components/ui/Field";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type { HerdRecord, HerdSpecies } from "@/lib/types";
 
 type HerdManagerProps = {
@@ -107,6 +109,7 @@ function HerdForm({
   onDone: () => void;
   onCancel: () => void;
 }) {
+  const toast = useToast();
   const [name, setName] = useState(herd?.name ?? "");
   const [species, setSpecies] = useState<HerdSpecies>(herd?.species ?? "sheep");
   const [headCount, setHeadCount] = useState(
@@ -142,16 +145,16 @@ function HerdForm({
         avgWeightLb: Number(avgWeightLb),
       };
       const url = herd ? `/api/grazing/herds/${herd.id}` : "/api/grazing/herds";
-      const response = await fetch(url, {
+      await apiFetch(url, {
         method: herd ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: payload,
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Failed to save herd");
+      toast.success(herd ? "Herd updated" : "Herd added");
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save herd");
+      const message = getErrorMessage(err, "Couldn't save herd.");
+      setError(message);
+      toast.error("Couldn't save herd", { description: message });
     } finally {
       setSaving(false);
     }
@@ -163,6 +166,8 @@ function HerdForm({
     setError(null);
     try {
       const url = `/api/grazing/herds/${herd.id}${force ? "?force=1" : ""}`;
+      // NOTE: raw fetch is kept here because the 409 response body carries
+      // `grazingEventCount`, which apiFetch does not preserve in ApiError.
       const response = await fetch(url, { method: "DELETE" });
       if (response.status === 409) {
         // Herd has grazing history — surface the count and require a second tap.
@@ -172,11 +177,17 @@ function HerdForm({
       }
       if (!response.ok) {
         const data = await response.json().catch(() => ({}));
-        throw new Error(data.error ?? "Failed to delete herd");
+        const message = (data.error as string | undefined) ?? "Couldn't delete herd.";
+        setError(message);
+        toast.error("Couldn't delete herd", { description: message });
+        return;
       }
+      toast.success("Herd deleted");
       onDone();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to delete herd");
+      const message = getErrorMessage(err, "Couldn't delete herd.");
+      setError(message);
+      toast.error("Couldn't delete herd", { description: message });
     } finally {
       setSaving(false);
     }

@@ -8,6 +8,8 @@ import { useMapInteraction } from "@/components/map/MapInteractionContext";
 import Button from "@/components/ui/Button";
 import DeleteButton from "@/components/ui/DeleteButton";
 import Sheet from "@/components/ui/Sheet";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type {
   CrossRecord,
   LocationRecord,
@@ -53,6 +55,7 @@ export default function PlantingEditSheet({
   onChanged,
   onClose,
 }: PlantingEditSheetProps) {
+  const toast = useToast();
   const { picking } = useMapInteraction();
   const [locationId, setLocationId] = useState(planting.locationId);
   const [plantType, setPlantType] = useState<PlantType>(planting.plantType);
@@ -70,10 +73,9 @@ export default function PlantingEditSheet({
     setError(null);
 
     try {
-      const response = await fetch(`/api/plantings/${planting.id}`, {
+      await apiFetch<{ planting: PlantingRecord }>(`/api/plantings/${planting.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           locationId,
           plantType,
           commonName,
@@ -81,33 +83,31 @@ export default function PlantingEditSheet({
           varietyId,
           source: source || undefined,
           status,
-        }),
+        },
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error ?? "Failed to update");
-      }
-
+      toast.success(`${commonName} updated`);
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update");
+      const message = getErrorMessage(err, "Couldn't update this planting.");
+      setError(message);
+      toast.error("Couldn't update planting", { description: message });
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete() {
-    const response = await fetch(`/api/plantings/${planting.id}`, {
-      method: "DELETE",
-    });
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error ?? "Failed to delete");
+    try {
+      await apiFetch(`/api/plantings/${planting.id}`, { method: "DELETE" });
+      toast.success(`${planting.commonName} deleted`);
+      onDeleted();
+      onClose();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't delete this planting.");
+      toast.error("Couldn't delete planting", { description: message });
     }
-    onDeleted();
-    onClose();
   }
 
   return (

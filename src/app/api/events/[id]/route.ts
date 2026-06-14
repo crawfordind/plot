@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
 import { events } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { findUnownedRef, getOwnedEvent } from "@/lib/ownership";
 import { serializeEvent } from "@/lib/serializers";
 import { updateEventSchema } from "@/lib/validators";
@@ -66,7 +66,7 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ event: serializeEvent(row!) });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to update event", 500);
+    return handleApiError(error, "update event");
   }
 }
 

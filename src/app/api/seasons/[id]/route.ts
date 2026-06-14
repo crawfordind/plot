@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
 import { seasons } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedSeason } from "@/lib/ownership";
 import { serializeSeason } from "@/lib/serializers";
 import { updateSeasonSchema } from "@/lib/validators";
@@ -42,7 +42,7 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ season: serializeSeason(row!) });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to update season", 500);
+    return handleApiError(error, "update season");
   }
 }
 

@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { locations } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { serializeLocation } from "@/lib/serializers";
 import { createLocationsBatchSchema } from "@/lib/validators";
 
@@ -83,6 +83,6 @@ export async function POST(request: Request) {
     if (error instanceof Error && error.message.startsWith("Unknown parent")) {
       return jsonError(error.message, 400);
     }
-    return jsonError("Failed to create structure", 500);
+    return handleApiError(error, "create structure");
   }
 }

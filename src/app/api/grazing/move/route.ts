@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { grazingEvents } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedHerd, getOwnedLocation } from "@/lib/ownership";
 import { serializeGrazingEvent } from "@/lib/serializers";
 import { grazingMoveSchema } from "@/lib/validators";
@@ -98,6 +98,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ opened, closed }, { status: 201 });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to record move", 500);
+    return handleApiError(error, "record move");
   }
 }

@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { locations, paddocks } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { subdivideField } from "@/lib/grazing/subdivide";
 import { getOwnedLocation } from "@/lib/ownership";
 import { serializeLocation, serializePaddock } from "@/lib/serializers";
@@ -90,6 +90,6 @@ export async function POST(request: Request) {
     );
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to subdivide field", 500);
+    return handleApiError(error, "subdivide field");
   }
 }

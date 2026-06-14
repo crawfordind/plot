@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { events, plantings } from "@/db/schema";
-import { handleZodError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, requireOrg } from "@/lib/api";
 import { confirmLogBatchSchema } from "@/lib/parse/schema";
 import { serializeEvent } from "@/lib/serializers";
 
@@ -62,6 +62,6 @@ export async function POST(request: Request) {
     if (error instanceof ZodError) {
       return handleZodError(error);
     }
-    return NextResponse.json({ error: "Failed to save logs" }, { status: 500 });
+    return handleApiError(error, "save logs");
   }
 }

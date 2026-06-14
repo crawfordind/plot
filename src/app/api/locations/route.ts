@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { locations } from "@/db/schema";
-import { handleZodError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, requireOrg } from "@/lib/api";
 import { serializeLocation } from "@/lib/serializers";
 import { createLocationSchema } from "@/lib/validators";
 
@@ -49,6 +49,6 @@ export async function POST(request: Request) {
     if (error instanceof ZodError) {
       return handleZodError(error);
     }
-    return NextResponse.json({ error: "Failed to create location" }, { status: 500 });
+    return handleApiError(error, "create location");
   }
 }

@@ -15,6 +15,8 @@ import {
   rankLocationsByDistance,
   type RankedLocation,
 } from "@/lib/capture/nearest";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type {
   AttachmentRecord,
   AttachmentSource,
@@ -64,6 +66,7 @@ export default function TakePhotoSheet({
     heading: number | null;
   } | null>(null);
 
+  const toast = useToast();
   const cameraRef = useRef<HTMLInputElement>(null);
   const libraryRef = useRef<HTMLInputElement>(null);
 
@@ -137,18 +140,15 @@ export default function TakePhotoSheet({
   async function analyze(id: string) {
     setAnalyzeFailed(null);
     try {
-      const res = await fetch(`/api/attachments/${id}/analyze`, {
-        method: "POST",
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        setAnalyzeFailed(data.error ?? `Analysis failed (${res.status})`);
-        return;
-      }
-      const data = (await res.json()) as { insight: PhotoInsightRecord };
+      const data = await apiFetch<{ insight: PhotoInsightRecord }>(
+        `/api/attachments/${id}/analyze`,
+        { method: "POST" },
+      );
       setInsight(data.insight);
-    } catch {
-      setAnalyzeFailed("Analysis failed — network error");
+    } catch (err) {
+      const message = getErrorMessage(err, "Analysis failed");
+      setAnalyzeFailed(message);
+      toast.error("Couldn't analyze photo", { description: message });
     }
   }
 
@@ -172,23 +172,19 @@ export default function TakePhotoSheet({
       if (geo.capturedAt !== null) form.append("capturedAt", String(geo.capturedAt));
       if (note.trim()) form.append("userContext", note.trim());
 
-      const res = await fetch("/api/attachments", { method: "POST", body: form });
-      if (!res.ok) {
-        if (res.status === 413) {
-          throw new Error(
-            "That photo is too large to upload, even after resizing.",
-          );
-        }
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error ?? "Upload failed");
-      }
-      const { attachment } = (await res.json()) as { attachment: AttachmentRecord };
+      const { attachment } = await apiFetch<{ attachment: AttachmentRecord }>(
+        "/api/attachments",
+        { method: "POST", body: form },
+      );
       setSavedId(attachment.id);
       setPhase("result");
+      toast.success("Photo saved");
       onSaved();
       await analyze(attachment.id);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Upload failed");
+      const message = getErrorMessage(err, "Upload failed");
+      setError(message);
+      toast.error("Couldn't save photo", { description: message });
       setPhase("review");
     }
   }

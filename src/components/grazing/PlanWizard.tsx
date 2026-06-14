@@ -5,6 +5,8 @@ import Button from "@/components/ui/Button";
 import Callout from "@/components/ui/Callout";
 import { Input, Select, Textarea } from "@/components/ui/Field";
 import HelpTip from "@/components/ui/HelpTip";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type { BalanceResult } from "@/lib/grazing/balance";
 import type { LocationRecord } from "@/lib/types";
 
@@ -26,6 +28,7 @@ const examples = [
 ];
 
 export default function PlanWizard({ locations, onChanged }: PlanWizardProps) {
+  const toast = useToast();
   const fields = locations.filter((l) => l.type === "field");
   const [text, setText] = useState("");
   const [loading, setLoading] = useState(false);
@@ -45,13 +48,10 @@ export default function PlanWizard({ locations, onChanged }: PlanWizardProps) {
     setError(null);
     setResult(null);
     try {
-      const response = await fetch("/api/grazing/plan", {
+      const data = await apiFetch<PlanResponse>("/api/grazing/plan", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawText: text.trim() }),
+        body: { rawText: text.trim() },
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not build a plan");
       setResult(data);
       // Seed the subdivide count from the recommended paddock count.
       if (data.balance) {
@@ -65,7 +65,9 @@ export default function PlanWizard({ locations, onChanged }: PlanWizardProps) {
         if (rec) setCount(String(rec));
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not build a plan");
+      const message = getErrorMessage(err, "Could not build a plan.");
+      setError(message);
+      toast.error("Couldn't calculate forage balance", { description: message });
     } finally {
       setLoading(false);
     }
@@ -77,22 +79,23 @@ export default function PlanWizard({ locations, onChanged }: PlanWizardProps) {
     setSubMsg(null);
     setError(null);
     try {
-      const response = await fetch("/api/grazing/paddocks/subdivide", {
+      const data = await apiFetch<{ count?: number }>("/api/grazing/paddocks/subdivide", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           fieldId,
           count: Number(count),
           restTargetDays: result?.restTargetDays ?? undefined,
           primaryForage: result?.forage ?? undefined,
-        }),
+        },
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Failed to subdivide");
-      setSubMsg(`Created ${data.count} paddocks on the map.`);
+      const created = data.count ?? Number(count);
+      setSubMsg(`Created ${created} paddocks on the map.`);
+      toast.success(`${created} paddocks added to the map`);
       onChanged();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to subdivide");
+      const message = getErrorMessage(err, "Couldn't subdivide the field.");
+      setError(message);
+      toast.error("Couldn't subdivide field", { description: message });
     } finally {
       setSubdividing(false);
     }

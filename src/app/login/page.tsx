@@ -6,9 +6,12 @@ import { useState } from "react";
 import Button from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import Icon from "@/components/ui/Icon";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 
 export default function LoginPage() {
   const router = useRouter();
+  const toast = useToast();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -20,21 +23,18 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const response = await fetch("/api/auth/login", {
+      await apiFetch("/api/auth/login", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
+        body: { email, password },
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error ?? "Login failed");
-      }
-
+      toast.success("Welcome back");
       router.push("/");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      const message = getErrorMessage(err, "Couldn't sign you in.");
+      setError(message);
+      toast.error("Sign in failed", { description: message });
     } finally {
       setLoading(false);
     }

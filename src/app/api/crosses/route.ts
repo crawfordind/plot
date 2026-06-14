@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { crosses } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedPlanting } from "@/lib/ownership";
 import { serializeCross } from "@/lib/serializers";
 import { createCrossSchema } from "@/lib/validators";
@@ -57,6 +57,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ cross: serializeCross(row!) }, { status: 201 });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to record cross", 500);
+    return handleApiError(error, "record cross");
   }
 }

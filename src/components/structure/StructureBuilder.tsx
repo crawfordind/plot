@@ -4,6 +4,8 @@ import { useState } from "react";
 import BottomSheet from "@/components/ui/BottomSheet";
 import Button from "@/components/ui/Button";
 import { Textarea } from "@/components/ui/Field";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import { layoutStructure, type Anchor } from "@/lib/structure/layout";
 import type { StructureNode, StructureSpec } from "@/lib/structure/schema";
 
@@ -67,6 +69,7 @@ export default function StructureBuilder({
   onCreated,
   onClose,
 }: StructureBuilderProps) {
+  const toast = useToast();
   const [text, setText] = useState("");
   const [parsing, setParsing] = useState(false);
   const [placing, setPlacing] = useState(false);
@@ -81,13 +84,10 @@ export default function StructureBuilder({
     setSpec(null);
 
     try {
-      const response = await fetch("/api/structure/parse", {
+      const data = await apiFetch<{ spec?: StructureSpec & { summary?: string } }>("/api/structure/parse", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rawText: text.trim() }),
+        body: { rawText: text.trim() },
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Could not read that");
 
       if (!data.spec?.nodes?.length) {
         setError(
@@ -98,7 +98,9 @@ export default function StructureBuilder({
       }
       setSpec(data.spec);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not read that");
+      const message = getErrorMessage(err, "Could not read that.");
+      setError(message);
+      toast.error("Couldn't read that description", { description: message });
     } finally {
       setParsing(false);
     }
@@ -115,10 +117,9 @@ export default function StructureBuilder({
 
     try {
       const placed = layoutStructure(spec, anchor);
-      const response = await fetch("/api/locations/batch", {
+      const data = await apiFetch<{ count?: number }>("/api/locations/batch", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           nodes: placed.map((node) => ({
             tempId: node.tempId,
             parentTempId: node.parentTempId,
@@ -128,14 +129,15 @@ export default function StructureBuilder({
             type: node.type,
             geometry: node.geometry,
           })),
-        }),
+        },
       });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error ?? "Failed to place structure");
-
-      onCreated(data.count ?? placed.length);
+      const count = data.count ?? placed.length;
+      toast.success(`${count} location${count === 1 ? "" : "s"} added to the map`);
+      onCreated(count);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to place structure");
+      const message = getErrorMessage(err, "Couldn't place the structure.");
+      setError(message);
+      toast.error("Couldn't place on map", { description: message });
     } finally {
       setPlacing(false);
     }

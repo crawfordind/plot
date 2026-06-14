@@ -9,9 +9,12 @@ import BottomSheet from "@/components/ui/BottomSheet";
 import Button from "@/components/ui/Button";
 import Callout from "@/components/ui/Callout";
 import { Field, Input, Select } from "@/components/ui/Field";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type {
   LocationRecord,
   PlantType,
+  PlantingRecord,
   SeasonRecord,
   VarietyRecord,
 } from "@/lib/types";
@@ -42,6 +45,7 @@ export default function PlantingForm({
   onVarietyCreated,
   onClose,
 }: PlantingFormProps) {
+  const toast = useToast();
   const { picking } = useMapInteraction();
   const [locationId, setLocationId] = useState(
     defaultLocationId ?? locations[0]?.id ?? "",
@@ -61,10 +65,9 @@ export default function PlantingForm({
     setError(null);
 
     try {
-      const response = await fetch("/api/plantings", {
+      await apiFetch<{ planting: PlantingRecord }>("/api/plantings", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           locationId,
           plantType,
           commonName,
@@ -72,18 +75,16 @@ export default function PlantingForm({
           varietyId: varietyId ?? undefined,
           seasonId: seasonId ?? undefined,
           source: source || undefined,
-        }),
+        },
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error ?? "Failed to save planting");
-      }
-
+      toast.success(`${commonName} planting created`);
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save planting");
+      const message = getErrorMessage(err, "Couldn't save this planting.");
+      setError(message);
+      toast.error("Couldn't create planting", { description: message });
     } finally {
       setSaving(false);
     }

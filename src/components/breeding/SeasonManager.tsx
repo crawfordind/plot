@@ -3,6 +3,8 @@
 import { useState } from "react";
 import Button from "@/components/ui/Button";
 import EmptyState from "@/components/ui/EmptyState";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type { SeasonRecord } from "@/lib/types";
 
 function todayInput(offsetMonths = 0): string {
@@ -22,6 +24,7 @@ export default function SeasonManager({
   seasons: SeasonRecord[];
   onChanged: () => void;
 }) {
+  const toast = useToast();
   const [label, setLabel] = useState("");
   const [startsAt, setStartsAt] = useState(todayInput());
   const [endsAt, setEndsAt] = useState(todayInput(6));
@@ -32,46 +35,69 @@ export default function SeasonManager({
   async function add() {
     if (!label.trim() || saving) return;
     setSaving(true);
+    const trimmedLabel = label.trim();
     try {
-      await fetch("/api/seasons", {
+      await apiFetch<{ season: SeasonRecord }>("/api/seasons", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          label: label.trim(),
+        body: {
+          label: trimmedLabel,
           startsAt: iso(startsAt),
           endsAt: iso(endsAt),
-        }),
+        },
       });
+      toast.success(`${trimmedLabel} season started`);
       setLabel("");
       onChanged();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't add this season.");
+      toast.error("Couldn't add season", { description: message });
     } finally {
       setSaving(false);
     }
   }
 
   async function closeSeason(id: string) {
-    await fetch(`/api/seasons/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "closed", reviewSummary: review.trim() || null }),
-    });
-    setReviewFor(null);
-    setReview("");
-    onChanged();
+    const season = seasons.find((s) => s.id === id);
+    try {
+      await apiFetch(`/api/seasons/${id}`, {
+        method: "PATCH",
+        body: { status: "closed", reviewSummary: review.trim() || null },
+      });
+      toast.success(`${season?.label ?? "Season"} closed`);
+      setReviewFor(null);
+      setReview("");
+      onChanged();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't close this season.");
+      toast.error("Couldn't close season", { description: message });
+    }
   }
 
   async function reopen(id: string) {
-    await fetch(`/api/seasons/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status: "active" }),
-    });
-    onChanged();
+    const season = seasons.find((s) => s.id === id);
+    try {
+      await apiFetch(`/api/seasons/${id}`, {
+        method: "PATCH",
+        body: { status: "active" },
+      });
+      toast.success(`${season?.label ?? "Season"} reopened`);
+      onChanged();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't reopen this season.");
+      toast.error("Couldn't reopen season", { description: message });
+    }
   }
 
   async function remove(id: string) {
-    await fetch(`/api/seasons/${id}`, { method: "DELETE" });
-    onChanged();
+    const season = seasons.find((s) => s.id === id);
+    try {
+      await apiFetch(`/api/seasons/${id}`, { method: "DELETE" });
+      toast.success(`${season?.label ?? "Season"} deleted`);
+      onChanged();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't delete this season.");
+      toast.error("Couldn't delete season", { description: message });
+    }
   }
 
   const field =

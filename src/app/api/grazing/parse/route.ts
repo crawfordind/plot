@@ -103,7 +103,7 @@ export async function POST(request: Request) {
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
     if (error instanceof SyntaxError) {
-      return jsonError("Failed to parse model response", 502);
+      return jsonError("The AI gave an unexpected response. Please try again.", 502);
     }
     if (error instanceof Error) {
       if (error.message.includes("OPENROUTER_API_KEY")) {

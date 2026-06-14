@@ -31,7 +31,9 @@ import StructureBuilder from "@/components/structure/StructureBuilder";
 import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import Tour, { type TourHandle } from "@/components/ui/Tour";
+import { useToast } from "@/components/ui/toast/ToastProvider";
 import UndoToast from "@/components/ui/UndoToast";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type { GeocodeResult } from "@/lib/geocode";
 import { polygonAreaAcres } from "@/lib/grazing/geo";
 import type { GrazingSnapshot } from "@/lib/grazing/status";
@@ -169,7 +171,7 @@ export default function MapShell({ userName }: MapShellProps) {
   const [coachRefreshKey, setCoachRefreshKey] = useState(0);
   const [logStarter, setLogStarter] = useState<string | undefined>();
   const [coachToast, setCoachToast] = useState<string | null>(null);
-  const [errorToast, setErrorToast] = useState<string | null>(null);
+  const toast = useToast();
   // False until the first locations fetch resolves, so the "Welcome to Plot"
   // empty state doesn't flash for returning users while data is still loading.
   const [loaded, setLoaded] = useState(false);
@@ -617,11 +619,11 @@ export default function MapShell({ userName }: MapShellProps) {
       } catch {
         // Move failed (network or server rejection) — tell the user instead of
         // showing a false "Moved" toast, and refresh so the asset snaps back.
-        setErrorToast(`Couldn't move ${asset.label} — nothing was changed.`);
+        toast.error(`Couldn't move ${asset.label} — nothing was changed.`);
         refreshData();
       }
     },
-    [locations, refreshData],
+    [locations, refreshData, toast],
   );
 
   // ---- Draw / edit geometry actions ----
@@ -652,7 +654,7 @@ export default function MapShell({ userName }: MapShellProps) {
       const res = await postJson("/api/locations", { name, type: "farm", geometry });
       cancelDraw();
       if (!res.ok) {
-        setErrorToast("Couldn't save the farm — please try again.");
+        toast.error("Couldn't save the farm — please try again.");
         return;
       }
       const data = await res.json();
@@ -679,7 +681,7 @@ export default function MapShell({ userName }: MapShellProps) {
     });
     cancelDraw();
     if (!res.ok) {
-      setErrorToast("Couldn't save the paddock — please try again.");
+      toast.error("Couldn't save the paddock — please try again.");
       return;
     }
     const data = await res.json();
@@ -710,7 +712,7 @@ export default function MapShell({ userName }: MapShellProps) {
       }
     } catch {
       // Keep the edit open so the user can retry rather than losing their reshape.
-      setErrorToast("Couldn't save the shape — check your connection and try again.");
+      toast.error("Couldn't save the shape — check your connection and try again.");
       return;
     }
     setEditIds(null);
@@ -733,7 +735,7 @@ export default function MapShell({ userName }: MapShellProps) {
         if (!res.ok) throw new Error("delete failed");
       }
     } catch {
-      setErrorToast("Couldn't delete — please try again.");
+      toast.error("Couldn't delete — please try again.");
       refreshData();
       return;
     }
@@ -792,7 +794,7 @@ export default function MapShell({ userName }: MapShellProps) {
         rootIds.length === 1 ? "Duplicated." : `Duplicated ${rootIds.length} parts.`,
       );
     } catch {
-      setErrorToast("Couldn't duplicate — please try again.");
+      toast.error("Couldn't duplicate — please try again.");
     }
   }
 
@@ -877,7 +879,7 @@ export default function MapShell({ userName }: MapShellProps) {
         await patchJson(`/api/locations/geometry`, { updates: childUpdates });
       }
     } catch {
-      setErrorToast(`Couldn't move ${location.name} — nothing was changed.`);
+      toast.error(`Couldn't move ${location.name} — nothing was changed.`);
       refreshData();
       return;
     }
@@ -896,11 +898,16 @@ export default function MapShell({ userName }: MapShellProps) {
   function handleDataSaved(coachMessage?: string) {
     refreshData();
     setCoachRefreshKey((k) => k + 1);
-    if (coachMessage) setCoachToast(coachMessage);
+    if (coachMessage) toast.success(coachMessage);
   }
 
   async function handleLogout() {
-    await fetch("/api/auth/logout", { method: "POST" });
+    try {
+      await apiFetch("/api/auth/logout", { method: "POST" });
+    } catch (err) {
+      // Logging out should never strand the user; note it and continue.
+      toast.error("Couldn't sign out cleanly", { description: getErrorMessage(err) });
+    }
     window.location.href = "/login";
   }
 
@@ -1134,22 +1141,6 @@ export default function MapShell({ userName }: MapShellProps) {
 
           {coachToast && !overlayOpen && (
             <CoachToast message={coachToast} onDismiss={() => setCoachToast(null)} />
-          )}
-
-          {errorToast && (
-            <div
-              role="alert"
-              className="pointer-events-auto absolute bottom-4 left-3 right-3 z-30 flex items-start gap-3 rounded-2xl border border-red-300 bg-red-700 px-4 py-3 text-sm leading-snug text-red-50 shadow-lg"
-            >
-              <p className="flex-1">{errorToast}</p>
-              <button
-                type="button"
-                onClick={() => setErrorToast(null)}
-                className="shrink-0 font-semibold text-red-100 underline"
-              >
-                Dismiss
-              </button>
-            </div>
           )}
         </div>
 

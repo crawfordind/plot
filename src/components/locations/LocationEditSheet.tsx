@@ -5,6 +5,8 @@ import Button from "@/components/ui/Button";
 import DeleteButton from "@/components/ui/DeleteButton";
 import { Field, Input, Select } from "@/components/ui/Field";
 import Sheet from "@/components/ui/Sheet";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type { LocationRecord, LocationType } from "@/lib/types";
 
 type LocationEditSheetProps = {
@@ -36,6 +38,7 @@ export default function LocationEditSheet({
   const [zone, setZone] = useState(location.zone ?? "");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const toast = useToast();
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -43,36 +46,33 @@ export default function LocationEditSheet({
     setError(null);
 
     try {
-      const response = await fetch(`/api/locations/${location.id}`, {
+      await apiFetch(`/api/locations/${location.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type, zone: zone || undefined }),
+        body: { name, type, zone: zone || undefined },
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error ?? "Failed to update");
-      }
-
+      toast.success("Location updated");
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update");
+      const message = getErrorMessage(err, "Couldn't update this location.");
+      setError(message);
+      toast.error("Couldn't update location", { description: message });
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete() {
-    const response = await fetch(`/api/locations/${location.id}`, {
-      method: "DELETE",
-    });
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error ?? "Failed to delete");
+    try {
+      await apiFetch(`/api/locations/${location.id}`, { method: "DELETE" });
+      toast.success(`${location.name} deleted`);
+      onDeleted();
+      onClose();
+    } catch (err) {
+      // Keep the sheet open on failure; the toast carries the reason.
+      toast.error("Couldn't delete location", { description: getErrorMessage(err) });
     }
-    onDeleted();
-    onClose();
   }
 
   return (

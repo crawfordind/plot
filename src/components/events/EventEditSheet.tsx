@@ -6,6 +6,8 @@ import { useMapInteraction } from "@/components/map/MapInteractionContext";
 import Button from "@/components/ui/Button";
 import DeleteButton from "@/components/ui/DeleteButton";
 import Sheet from "@/components/ui/Sheet";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type { EventRecord, EventType, LocationRecord, PlantingRecord } from "@/lib/types";
 
 type EventEditSheetProps = {
@@ -39,6 +41,7 @@ export default function EventEditSheet({
   onDeleted,
   onClose,
 }: EventEditSheetProps) {
+  const toast = useToast();
   const { picking } = useMapInteraction();
   const [type, setType] = useState<EventType>(event.type);
   const [locationId, setLocationId] = useState(event.locationId ?? "");
@@ -61,10 +64,9 @@ export default function EventEditSheet({
     setError(null);
 
     try {
-      const response = await fetch(`/api/events/${event.id}`, {
+      await apiFetch(`/api/events/${event.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+        body: {
           type,
           locationId: locationId || undefined,
           plantingId: plantingId || undefined,
@@ -73,31 +75,32 @@ export default function EventEditSheet({
           unit: unit || undefined,
           amount: amount ? Number(amount) : undefined,
           notes: notes || undefined,
-        }),
+        },
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error ?? "Failed to update");
-      }
-
+      toast.success("Log updated");
       onSaved();
       onClose();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to update");
+      const message = getErrorMessage(err, "Couldn't update this log.");
+      setError(message);
+      toast.error("Couldn't update log", { description: message });
     } finally {
       setSaving(false);
     }
   }
 
   async function handleDelete() {
-    const response = await fetch(`/api/events/${event.id}`, { method: "DELETE" });
-    if (!response.ok) {
-      const data = await response.json();
-      throw new Error(data.error ?? "Failed to delete");
+    try {
+      await apiFetch(`/api/events/${event.id}`, { method: "DELETE" });
+      toast.success("Log deleted");
+      onDeleted();
+      onClose();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't delete this log.");
+      setError(message);
+      toast.error("Couldn't delete log", { description: message });
     }
-    onDeleted();
-    onClose();
   }
 
   return (

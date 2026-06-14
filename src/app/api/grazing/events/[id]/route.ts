@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { ZodError } from "zod";
 import { db } from "@/db";
 import { grazingEvents } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { getOwnedGrazingEvent } from "@/lib/ownership";
 import { serializeGrazingEvent } from "@/lib/serializers";
 import { updateGrazingEventSchema } from "@/lib/validators";
@@ -48,7 +48,7 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ grazingEvent: serializeGrazingEvent(row!) });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to update grazing record", 500);
+    return handleApiError(error, "update grazing record");
   }
 }
 

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import { setActiveOrg } from "@/lib/auth";
 import { getMembership } from "@/lib/orgs";
 import { switchOrgSchema } from "@/lib/validators";
@@ -18,6 +18,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, activeOrgId: orgId });
   } catch (error) {
     if (error instanceof ZodError) return handleZodError(error);
-    return jsonError("Failed to switch workspace", 500);
+    return handleApiError(error, "switch workspace");
   }
 }

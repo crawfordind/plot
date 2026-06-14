@@ -6,9 +6,12 @@ import { useState } from "react";
 import Button from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
 import Icon from "@/components/ui/Icon";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const toast = useToast();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -21,21 +24,18 @@ export default function RegisterPage() {
     setError(null);
 
     try {
-      const response = await fetch("/api/auth/register", {
+      await apiFetch("/api/auth/register", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name || undefined, email, password }),
+        body: { name: name || undefined, email, password },
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.error ?? "Registration failed");
-      }
-
+      toast.success("Account created", { description: "Welcome to Plot!" });
       router.push("/");
       router.refresh();
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed");
+      const message = getErrorMessage(err, "Couldn't create your account.");
+      setError(message);
+      toast.error("Registration failed", { description: message });
     } finally {
       setLoading(false);
     }

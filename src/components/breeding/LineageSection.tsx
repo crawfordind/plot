@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { useToast } from "@/components/ui/toast/ToastProvider";
+import { apiFetch, getErrorMessage } from "@/lib/client";
 import type { CrossRecord, PlantingRecord } from "@/lib/types";
 
 function label(p: PlantingRecord | undefined | null): string {
@@ -21,6 +23,7 @@ export default function LineageSection({
   crosses: CrossRecord[];
   onChanged: () => void;
 }) {
+  const toast = useToast();
   const byId = new Map(plantings.map((p) => [p.id, p]));
   const parent = planting.parentPlantingId
     ? byId.get(planting.parentPlantingId)
@@ -37,12 +40,20 @@ export default function LineageSection({
   async function setParent(parentId: string) {
     setSaving(true);
     try {
-      await fetch(`/api/plantings/${planting.id}`, {
+      await apiFetch<{ planting: PlantingRecord }>(`/api/plantings/${planting.id}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ parentPlantingId: parentId || null }),
+        body: { parentPlantingId: parentId || null },
       });
+      const parentPlanting = parentId ? byId.get(parentId) : null;
+      if (parentId && parentPlanting) {
+        toast.success(`Parent set to ${label(parentPlanting)}`);
+      } else {
+        toast.success("Parent link removed");
+      }
       onChanged();
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't update lineage.");
+      toast.error("Couldn't update lineage", { description: message });
     } finally {
       setSaving(false);
     }

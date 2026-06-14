@@ -4,7 +4,7 @@ import { ZodError } from "zod";
 import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { plantings } from "@/db/schema";
-import { handleZodError, jsonError, requireOrg } from "@/lib/api";
+import { handleApiError, handleZodError, jsonError, requireOrg } from "@/lib/api";
 import {
   getOwnedPlanting,
   getOwnedSeason,
@@ -77,6 +77,6 @@ export async function POST(request: Request) {
     if (error instanceof ZodError) {
       return handleZodError(error);
     }
-    return NextResponse.json({ error: "Failed to create planting" }, { status: 500 });
+    return handleApiError(error, "create planting");
   }
 }
