@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getCurrentFix } from "@/lib/capture/geo";
 import {
+  MAX_DIRECT_UPLOAD_BYTES,
+  isImageLike,
   mergeCaptureGeo,
   prepareImageForUpload,
 } from "@/lib/capture/prepareUpload";
@@ -15,8 +17,9 @@ type AttachmentsSectionProps = {
   locationId: string;
 };
 
+// .heic/.heif are listed explicitly — some pickers don't match them via image/*.
 const FILE_ACCEPT =
-  "image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt";
+  "image/*,.heic,.heif,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx,.csv,.txt";
 
 function kindEmoji(kind: AttachmentRecord["kind"]): string {
   if (kind === "video") return "🎬";
@@ -122,6 +125,13 @@ export default function AttachmentsSection({
     const newImageIds: string[] = [];
     try {
       for (const original of Array.from(fileList)) {
+        // Non-image files can't be shrunk client-side — fail fast with a clear
+        // message rather than letting the platform reject the oversized body.
+        if (!isImageLike(original) && original.size > MAX_DIRECT_UPLOAD_BYTES) {
+          throw new Error(
+            `"${original.name}" is too large to upload (over ~4 MB). Large videos/PDFs aren't supported yet.`,
+          );
+        }
         // Downscale + re-encode images client-side (and recover EXIF geo) so big
         // phone photos stay under the platform's upload size limit.
         const prepared = await prepareImageForUpload(original);
@@ -217,7 +227,7 @@ export default function AttachmentsSection({
       <input
         ref={cameraRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.heic,.heif"
         capture="environment"
         className="hidden"
         onChange={(e) => handleFiles(e.target.files, "asset_camera")}
