@@ -1,5 +1,5 @@
 import { reverseGeocode } from "@/lib/geocode";
-import { geometryBounds } from "@/lib/map/geometry";
+import { geometryCenter } from "@/lib/map/geometry";
 import type { GeoJSONGeometry } from "@/lib/types";
 
 // "Where and when" context for the expert panel. The chat already knows the
@@ -35,23 +35,36 @@ const zoneCache = new Map<string, HardinessZone>();
 
 // --- geometry → a single representative point -------------------------------
 
-// The farm's center: midpoint of the bounding box over every mapped area. Cheap,
-// robust to mixed Point/Line/Polygon shapes, and good enough to pick a weather
-// grid cell. Returns [lat, lng] (note the order) or null if nothing is mapped.
+// The farm's center: the median of every mapped area's centroid. We use the
+// median, not a bounding-box midpoint or a mean, because it ignores outliers — a
+// single stray or mis-placed location (e.g. a pin dropped in another state) would
+// otherwise drag a bbox/mean far from where the farm actually is and yield wildly
+// wrong weather and hardiness data. Returns [lat, lng] (note the order) or null
+// if nothing is mapped.
 export function farmCenter(geometryJson: string[]): [number, number] | null {
-  const geometries: GeoJSONGeometry[] = [];
+  const lats: number[] = [];
+  const lngs: number[] = [];
   for (const raw of geometryJson) {
     try {
       const g = JSON.parse(raw) as GeoJSONGeometry;
-      if (g && typeof g.type === "string") geometries.push(g);
+      if (!g || typeof g.type !== "string") continue;
+      const [lng, lat] = geometryCenter(g);
+      if (Number.isFinite(lat) && Number.isFinite(lng)) {
+        lats.push(lat);
+        lngs.push(lng);
+      }
     } catch {
       // Skip unparseable rows rather than failing the whole lookup.
     }
   }
-  const bounds = geometryBounds(geometries);
-  if (!bounds) return null;
-  const [[minLng, minLat], [maxLng, maxLat]] = bounds;
-  return [(minLat + maxLat) / 2, (minLng + maxLng) / 2];
+  if (lats.length === 0) return null;
+  return [median(lats), median(lngs)];
+}
+
+function median(xs: number[]): number {
+  const sorted = [...xs].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
 // --- WMO weather codes ------------------------------------------------------
