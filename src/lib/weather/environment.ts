@@ -15,7 +15,10 @@ const ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive";
 const FETCH_TIMEOUT_MS = 6_000;
 const ARCHIVE_TIMEOUT_MS = 10_000;
 
-export type FarmEnvironment = { text: string; chips: string[] };
+// `text` is the full multi-line digest (used for the farm the user is looking
+// at); `summary` is a one-line condensation (used for the farmer's *other*
+// farms, so a multi-farm panel stays compact).
+export type FarmEnvironment = { text: string; summary: string; chips: string[] };
 
 // Conditions change slowly; a ~30-min cache keeps the panel snappy and stays well
 // within Open-Meteo's free limits even when a thread fires many turns. Keyed by
@@ -349,6 +352,7 @@ export async function getFarmEnvironment(
         `Today is ${WEEKDAYS[now.getDay()]}, ${MONTHS[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}.`,
         "The farm hasn't been placed on the map yet, so location-specific weather and forecast aren't available.",
       ].join("\n"),
+      summary: "not yet placed on the map — no weather available.",
       chips: [],
     };
   }
@@ -392,6 +396,13 @@ export async function getFarmEnvironment(
       ]
         .filter(Boolean)
         .join("\n"),
+      summary: [
+        place ? place.split(",").slice(0, 2).join(",").trim() : `${lat.toFixed(2)},${lng.toFixed(2)}`,
+        zone ? `zone ${zone.zone}` : "",
+        "live weather unavailable",
+      ]
+        .filter(Boolean)
+        .join(" · ") + ".",
       chips: zone ? [`USDA zone ${zone.zone}`] : [],
     };
   }
@@ -524,5 +535,23 @@ function render(
     chips.push("frost risk ahead");
   }
 
-  return { text: lines.join("\n"), chips };
+  // One-line condensation for the farmer's *other* farms (keeps a multi-farm
+  // panel compact): place, zone, current temp, today's range, frost flag.
+  const sumParts: string[] = [];
+  sumParts.push(
+    place ? place.split(",").slice(0, 2).join(",").trim() : `${lat.toFixed(2)},${lng.toFixed(2)}`,
+  );
+  if (zone) sumParts.push(`zone ${zone.zone}`);
+  if (cur.temperature_2m != null) {
+    const desc = cur.weather_code != null ? describeCode(cur.weather_code) : "";
+    sumParts.push(`now ${round(cur.temperature_2m)}°F${desc ? ` ${desc}` : ""}`);
+  }
+  if (todayIdx >= 0) {
+    const hi = daily.temperature_2m_max?.[todayIdx];
+    const lo = daily.temperature_2m_min?.[todayIdx];
+    if (hi != null && lo != null) sumParts.push(`today ${round(hi)}/${round(lo)}°F`);
+  }
+  if (frost) sumParts.push(`⚠️ frost ${frost.day}`);
+
+  return { text: lines.join("\n"), summary: sumParts.join(" · ") + ".", chips };
 }

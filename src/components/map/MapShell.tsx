@@ -1179,7 +1179,14 @@ export default function MapShell({ userName }: MapShellProps) {
           onSaved={refreshData}
         />
 
-        <ExpertChat open={showChat} onClose={() => setShowChat(false)} />
+        <ExpertChat
+          open={showChat}
+          onClose={() => setShowChat(false)}
+          focusedFarmId={showChat ? viewportFarmId() : null}
+          locations={locations}
+          plantings={plantings}
+          onLogged={refreshData}
+        />
 
         {showBuilder && (
           <StructureBuilder
