@@ -7,6 +7,7 @@ import { getCurrentFix, type CaptureFix } from "@/lib/capture/geo";
 import {
   mergeCaptureGeo,
   prepareImageForUpload,
+  type PreparedExif,
 } from "@/lib/capture/prepareUpload";
 import {
   formatDistance,
@@ -44,7 +45,9 @@ export default function TakePhotoSheet({
   onSaved,
 }: TakePhotoSheetProps) {
   const [phase, setPhase] = useState<Phase>("pick");
-  const [file, setFile] = useState<File | null>(null);
+  const [preparedFile, setPreparedFile] = useState<File | null>(null);
+  const [preparedExif, setPreparedExif] = useState<PreparedExif | null>(null);
+  const [preparing, setPreparing] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [source, setSource] = useState<AttachmentSource>("live_camera");
   const [fix, setFix] = useState<CaptureFix | null>(null);
@@ -67,7 +70,9 @@ export default function TakePhotoSheet({
   function reset() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPhase("pick");
-    setFile(null);
+    setPreparedFile(null);
+    setPreparedExif(null);
+    setPreparing(false);
     setPreviewUrl(null);
     setFix(null);
     setRanked([]);
@@ -93,12 +98,21 @@ export default function TakePhotoSheet({
     if (!picked) return;
     setError(null);
     setSource(pickedSource);
-    setFile(picked);
-    setPreviewUrl(URL.createObjectURL(picked));
     setPhase("review");
+    setPreparing(true);
 
-    const liveFix = await getCurrentFix();
+    // Prepare (resize + HEIC→JPEG) and get the location fix together. Preparing up
+    // front means the preview and upload use the converted JPEG — so HEIC photos
+    // preview correctly instead of showing a broken image.
+    const [liveFix, prepared] = await Promise.all([
+      getCurrentFix(),
+      prepareImageForUpload(picked),
+    ]);
     setFix(liveFix);
+    setPreparedFile(prepared.file);
+    setPreparedExif(prepared.exif);
+    if (previewUrl) URL.revokeObjectURL(previewUrl);
+    setPreviewUrl(URL.createObjectURL(prepared.file));
 
     // Rank assets by the GPS fix, falling back to the current map centre.
     const origin: [number, number] | null =
@@ -117,6 +131,7 @@ export default function TakePhotoSheet({
       order[0]?.location.id ||
       "";
     setChosenLocationId(preset);
+    setPreparing(false);
   }
 
   async function analyze(id: string) {
@@ -138,18 +153,16 @@ export default function TakePhotoSheet({
   }
 
   async function save() {
-    if (!file || !chosenLocationId) return;
+    if (!preparedFile || !chosenLocationId) return;
     setPhase("saving");
     setError(null);
     try {
-      // Downscale + re-encode so the upload stays under the platform size limit,
-      // recovering EXIF geo before the canvas strips it.
-      const prepared = await prepareImageForUpload(file);
-      const geo = mergeCaptureGeo(fix, prepared.exif, source !== "upload");
+      // The file was already resized/converted at pick time.
+      const geo = mergeCaptureGeo(fix, preparedExif, source !== "upload");
       setResultGeo({ lat: geo.lat, lng: geo.lng, heading: geo.heading });
 
       const form = new FormData();
-      form.append("file", prepared.file);
+      form.append("file", preparedFile);
       form.append("locationId", chosenLocationId);
       form.append("source", source);
       if (geo.lat !== null) form.append("lat", String(geo.lat));
@@ -196,7 +209,7 @@ export default function TakePhotoSheet({
       <input
         ref={cameraRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.heic,.heif"
         capture="environment"
         className="hidden"
         onChange={(e) => onPicked(e.target.files, "live_camera")}
@@ -204,7 +217,7 @@ export default function TakePhotoSheet({
       <input
         ref={libraryRef}
         type="file"
-        accept="image/*"
+        accept="image/*,.heic,.heif"
         className="hidden"
         onChange={(e) => onPicked(e.target.files, "upload")}
       />
@@ -235,13 +248,17 @@ export default function TakePhotoSheet({
 
       {(phase === "review" || phase === "saving") && (
         <div className="flex flex-col gap-3">
-          {previewUrl && (
+          {previewUrl ? (
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={previewUrl}
               alt="Selected"
               className="max-h-56 w-full rounded-xl object-cover"
             />
+          ) : (
+            <div className="flex h-40 w-full items-center justify-center rounded-xl bg-stone-100 text-sm text-stone-400">
+              {preparing ? "Preparing photo…" : "No preview"}
+            </div>
           )}
 
           <div>
@@ -300,10 +317,19 @@ export default function TakePhotoSheet({
             <button
               type="button"
               onClick={save}
-              disabled={phase === "saving" || !chosenLocationId}
+              disabled={
+                phase === "saving" ||
+                preparing ||
+                !preparedFile ||
+                !chosenLocationId
+              }
               className="touch-target flex-[2] rounded-xl bg-emerald-600 text-sm font-semibold text-white active:bg-emerald-700 disabled:opacity-50"
             >
-              {phase === "saving" ? "Saving…" : "Save & analyze"}
+              {phase === "saving"
+                ? "Saving…"
+                : preparing
+                  ? "Preparing…"
+                  : "Save & analyze"}
             </button>
           </div>
         </div>
