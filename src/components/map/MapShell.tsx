@@ -1183,6 +1183,9 @@ export default function MapShell({ userName }: MapShellProps) {
           open={showChat}
           onClose={() => setShowChat(false)}
           focusedFarmId={showChat ? viewportFarmId() : null}
+          locations={locations}
+          plantings={plantings}
+          onLogged={refreshData}
         />
 
         {showBuilder && (

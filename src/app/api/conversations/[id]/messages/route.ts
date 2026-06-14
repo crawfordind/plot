@@ -12,13 +12,28 @@ import {
   type Expert,
   type ExpertId,
 } from "@/lib/experts/personas";
-import { chatCompletion, streamChatCompletion } from "@/lib/openrouter";
+import {
+  chatCompletion,
+  streamAgentCompletion,
+  streamChatCompletion,
+  type AgentMessage,
+  type AgentToolCall,
+} from "@/lib/openrouter";
+import {
+  AGENT_TOOL_BY_NAME,
+  AGENT_TOOL_DEFS,
+  type AgentToolContext,
+} from "@/lib/agent/tools";
 
 // Streaming is request-scoped; never cache.
 export const dynamic = "force-dynamic";
 
 // How much of the thread we replay to the model (after grouping turns).
 const MAX_HISTORY = 16;
+
+// Hard cap on tool-call round-trips per turn, so a confused model can't loop
+// forever calling read tools. Write tools halt the loop on their own.
+const AGENT_MAX_STEPS = 4;
 
 const sendSchema = z.object({
   expertIds: z
@@ -144,6 +159,25 @@ export async function POST(request: Request, { params }: Params) {
       .filter(Boolean)
       .join("\n");
 
+  // The agentic variant: same persona + context, plus a directive that it can
+  // act through tools. Used only for the single-assistant path (see `agentic`).
+  const systemForAgent = (e: Expert): string =>
+    [
+      systemFor(e),
+      "",
+      "=== ACTING ON THE FARM (you are an agent, not just a chatbot) ===",
+      "You can take actions through tools, not only give advice. When the farmer reports something they did or saw — or asks you to log it — call log_activity. The farmer reviews and confirms every action before it is saved, so don't over-ask: infer sensible defaults (today's date, the farm/area in view) and propose the log. Reach for query_activity when answering accurately needs more history than the snapshot above (counts, a place's full history, sales/cost totals). After you propose a log, tell the farmer in one line that it's ready for them to confirm.",
+    ].join("\n");
+
+  // Single Plot Assistant → agentic loop with tools. The multi-expert panel and
+  // the specialists stay advisory-only (pure text), which keeps the SSE protocol
+  // unambiguous about who is acting.
+  const agentic = experts.length === 1 && experts[0].id === "plot_assistant";
+  const toolCtx: AgentToolContext = {
+    orgId: org.id,
+    focusedFarmId: body.focusedFarmId ?? null,
+  };
+
   const maxTokens = multi ? 700 : 900;
   const encoder = new TextEncoder();
 
@@ -173,6 +207,127 @@ export async function POST(request: Request, { params }: Params) {
             return;
           }
         }
+        const text = acc.trim();
+        if (text) {
+          await db.insert(chatMessages).values({
+            id: nanoid(),
+            orgId: org.id,
+            conversationId,
+            role: "assistant",
+            expertId: e.id,
+            content: text,
+          });
+        }
+        send({ type: "done", expertId: e.id });
+      };
+
+      // The agentic Plot Assistant: stream text, run read tools inline, and
+      // surface write tools (logging) to the user as a confirm card, then stop.
+      const runAgent = async (e: Expert) => {
+        const convoMessages: AgentMessage[] = [
+          { role: "system", content: systemForAgent(e) },
+          ...history.map((t): AgentMessage => ({ role: t.role, content: t.content })),
+        ];
+        let acc = "";
+        try {
+          for (let step = 0; step < AGENT_MAX_STEPS; step++) {
+            let stepText = "";
+            let calls: AgentToolCall[] = [];
+            for await (const chunk of streamAgentCompletion(
+              convoMessages,
+              AGENT_TOOL_DEFS,
+              { maxTokens, temperature: 0.4 },
+            )) {
+              if (chunk.type === "text") {
+                stepText += chunk.value;
+                acc += chunk.value;
+                send({ type: "delta", expertId: e.id, text: chunk.value });
+              } else {
+                calls = chunk.calls;
+              }
+            }
+
+            if (calls.length === 0) break; // plain answer — done
+
+            convoMessages.push({
+              role: "assistant",
+              content: stepText || null,
+              tool_calls: calls.map((c) => ({
+                id: c.id,
+                type: "function",
+                function: { name: c.name, arguments: c.arguments },
+              })),
+            });
+
+            let halt = false;
+            for (const call of calls) {
+              const tool = AGENT_TOOL_BY_NAME[call.name];
+              let args: Record<string, unknown> = {};
+              try {
+                args = JSON.parse(call.arguments || "{}");
+              } catch {
+                args = {};
+              }
+
+              if (!tool) {
+                convoMessages.push({
+                  role: "tool",
+                  tool_call_id: call.id,
+                  content: "Unknown tool.",
+                });
+                continue;
+              }
+
+              if (tool.kind === "read") {
+                let result: string;
+                try {
+                  result = await tool.run(args, toolCtx);
+                } catch (err) {
+                  console.error(`[messages] tool ${call.name} failed:`, err);
+                  result = "That lookup failed.";
+                }
+                convoMessages.push({
+                  role: "tool",
+                  tool_call_id: call.id,
+                  content: result,
+                });
+              } else {
+                // Write tool: don't persist — hand a proposal to the client to
+                // confirm. The loop ends here; nothing more to stream this turn.
+                try {
+                  const proposal = await tool.prepare(args, toolCtx);
+                  send({
+                    type: "tool_call",
+                    expertId: e.id,
+                    callId: call.id,
+                    name: call.name,
+                    proposal,
+                  });
+                } catch (err) {
+                  console.error(`[messages] prepare ${call.name} failed:`, err);
+                  const note =
+                    "\n\n_(I couldn't prepare that log — use the Log it button to enter it.)_";
+                  acc += note;
+                  send({ type: "delta", expertId: e.id, text: note });
+                }
+                halt = true;
+              }
+            }
+
+            if (halt) break;
+          }
+        } catch (err) {
+          console.error(`[conversations/messages] agent ${e.id} failed:`, err);
+          if (!acc) {
+            send({
+              type: "error",
+              expertId: e.id,
+              message: "This assistant is unavailable right now.",
+            });
+            return;
+          }
+        }
+
         const text = acc.trim();
         if (text) {
           await db.insert(chatMessages).values({
@@ -218,7 +373,10 @@ export async function POST(request: Request, { params }: Params) {
       };
 
       try {
-        await Promise.all([...experts.map(runExpert), titleTask()]);
+        const replyTasks = agentic
+          ? [runAgent(experts[0])]
+          : experts.map(runExpert);
+        await Promise.all([...replyTasks, titleTask()]);
         // Bump recency and remember the expert selection for next time.
         await db
           .update(conversations)

@@ -8,7 +8,10 @@ import {
   prepareImageForUpload,
   MAX_DIRECT_UPLOAD_BYTES,
 } from "@/lib/capture/prepareUpload";
+import ParseConfirmCard from "@/components/log/ParseConfirmCard";
 import { EXPERTS, EXPERT_BY_ID, type Expert, type ExpertId } from "@/lib/experts/personas";
+import type { ResolvedParse } from "@/lib/parse/schema";
+import type { LocationRecord, PlantingRecord } from "@/lib/types";
 import Markdown from "./Markdown";
 import { useConversations } from "./useConversations";
 
@@ -18,7 +21,18 @@ type ExpertChatProps = {
   // The farm currently centered in the map viewport, so the experts know which
   // farm the user is most likely asking about. Null when no farm is in view.
   focusedFarmId?: string | null;
+  // Org locations/plantings, used to render the confirm card when the agent
+  // proposes a log (so its dropdowns are editable, same as the Log It flow).
+  locations: LocationRecord[];
+  plantings: PlantingRecord[];
+  // Called after the user confirms an agent-proposed log, so the map/records can
+  // refresh to show the new event.
+  onLogged?: () => void;
 };
+
+// A log the agent has proposed (via the log_activity tool) and is waiting for
+// the user to confirm. Mirrors what ParseConfirmCard consumes.
+type LogProposal = { rawText: string; resolved: ResolvedParse };
 
 type AttachmentRef = { fileName: string; kind: "image" | "document" };
 type UserMessage = { id: string; role: "user"; content: string; attachments: AttachmentRef[] };
@@ -45,6 +59,8 @@ type StreamEvent =
   | { type: "done"; expertId: ExpertId }
   | { type: "error"; expertId: ExpertId; message: string }
   | { type: "title"; title: string }
+  // The agent wants to log something — surface a confirm card.
+  | { type: "tool_call"; expertId: ExpertId; callId: string; name: string; proposal: LogProposal }
   | { type: "end" };
 
 // Static Tailwind classes per accent (kept literal so they survive purge).
@@ -92,7 +108,14 @@ function relativeTime(ms: number): string {
 
 // A modern, persistent farm-advisory chat: pick one or a few experts, attach
 // photos/docs, stream replies, and revisit any past thread from history.
-export default function ExpertChat({ open, onClose, focusedFarmId }: ExpertChatProps) {
+export default function ExpertChat({
+  open,
+  onClose,
+  focusedFarmId,
+  locations,
+  plantings,
+  onLogged,
+}: ExpertChatProps) {
   const convos = useConversations();
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -104,6 +127,9 @@ export default function ExpertChat({ open, onClose, focusedFarmId }: ExpertChatP
   const [sending, setSending] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Logs the agent has proposed this session, awaiting confirmation. Shown one
+  // at a time (an agent may propose several in one turn).
+  const [pendingActions, setPendingActions] = useState<LogProposal[]>([]);
 
   const [showHistory, setShowHistory] = useState(false);
   const [historyQuery, setHistoryQuery] = useState("");
@@ -298,6 +324,10 @@ export default function ExpertChat({ open, onClose, focusedFarmId }: ExpertChatP
           ),
         );
       }
+    } else if (evt.type === "tool_call") {
+      if (evt.name === "log_activity") {
+        setPendingActions((prev) => [...prev, evt.proposal]);
+      }
     } else if (evt.type === "title") {
       setActiveTitle(evt.title);
       convos.setTitleLocal(convId, evt.title);
@@ -401,6 +431,29 @@ export default function ExpertChat({ open, onClose, focusedFarmId }: ExpertChatP
     } catch {
       // clipboard blocked — silently ignore
     }
+  }
+
+  function dismissAction() {
+    setPendingActions((prev) => prev.slice(1));
+  }
+
+  // After the user confirms an agent-proposed log: drop it from the queue, drop
+  // a confirmation line into the thread, and let the map/records refresh.
+  function onActionSaved(saveTip: string) {
+    setPendingActions((prev) => prev.slice(1));
+    const turn = `${(turnRef.current += 1)}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: `log-${turn}`,
+        role: "assistant",
+        expertId: "plot_assistant",
+        content: `✓ Logged. ${saveTip ?? ""}`.trim(),
+        streaming: false,
+        failed: false,
+      },
+    ]);
+    onLogged?.();
   }
 
   async function commitRename(id: string) {
@@ -741,6 +794,19 @@ export default function ExpertChat({ open, onClose, focusedFarmId }: ExpertChatP
               ))}
             </div>
           </div>
+        )}
+
+        {/* Agent-proposed log awaiting confirmation (stacks above the chat). */}
+        {pendingActions.length > 0 && (
+          <ParseConfirmCard
+            key={pendingActions[0].rawText}
+            rawText={pendingActions[0].rawText}
+            resolved={pendingActions[0].resolved}
+            locations={locations}
+            plantings={plantings}
+            onConfirm={onActionSaved}
+            onCancel={dismissAction}
+          />
         )}
       </div>
     </BottomSheet>
