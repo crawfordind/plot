@@ -10,7 +10,11 @@ import {
   plantings,
   seasons,
 } from "@/db/schema";
-import { farmCenter, getFarmEnvironment } from "@/lib/weather/environment";
+import {
+  farmCenter,
+  getFarmEnvironment,
+  type FarmEnvironment,
+} from "@/lib/weather/environment";
 import type { ContextSlice } from "./personas";
 
 // A compact, human-readable digest of an org's farm, sliced by topic. We build
@@ -19,14 +23,24 @@ import type { ContextSlice } from "./personas";
 // DB round-trips into one. Sections are plain text (not raw rows) to keep the
 // prompt — and therefore cost — small and stable.
 
+// Every slice except `environment` is org-wide and lives in `sections`. The
+// `environment` slice is per-farm and focus-aware (it depends on which farm the
+// user is looking at, which varies per request), so it's assembled later from
+// `farmEnvs` rather than baked into the cached text.
+type StaticSlice = Exclude<ContextSlice, "environment">;
+
+type FarmEnvEntry = { farmId: string; farmName: string; env: FarmEnvironment };
+
 type Snapshot = {
-  sections: Record<ContextSlice, string>;
-  chips: Record<ContextSlice, string[]>;
+  sections: Record<StaticSlice, string>;
+  chips: Record<StaticSlice, string[]>;
+  farmEnvs: FarmEnvEntry[];
 };
 
 const cache = new Map<string, { expires: number; snapshot: Snapshot }>();
 const TTL_MS = 60_000;
 const MAX_LIST = 24; // cap any enumerated list so the prompt can't blow up
+const MAX_FARMS = 8; // bound the per-farm weather fan-out (real farms rarely exceed this)
 
 function shortDate(d: Date): string {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
@@ -85,16 +99,27 @@ async function buildSnapshot(orgId: string): Promise<Snapshot> {
   ]);
 
   const nameById = new Map(locationRows.map((l) => [l.id, l.name]));
-  const sections = {} as Record<ContextSlice, string>;
-  const chips = {} as Record<ContextSlice, string[]>;
+  const sections = {} as Record<StaticSlice, string>;
+  const chips = {} as Record<StaticSlice, string[]>;
 
-  // --- environment (date, place, weather & forecast) ---
-  // Best-effort and self-caching; getFarmEnvironment never throws.
-  {
-    const center = farmCenter(locationRows.map((l) => l.geometry));
-    const env = await getFarmEnvironment(center);
-    sections.environment = env.text;
-    chips.environment = env.chips;
+  // --- environment (per-farm date, place, weather & forecast) ---
+  // Group every mapped area under its root farm, then fetch weather once per
+  // farm from that farm's own center. Best-effort and self-caching;
+  // getFarmEnvironment never throws.
+  const farmGroups = groupByFarm(locationRows);
+  let farmEnvs: FarmEnvEntry[];
+  if (farmGroups.length === 0) {
+    // Nothing mapped yet — still surface the date via the null-center path.
+    const env = await getFarmEnvironment(null);
+    farmEnvs = [{ farmId: "", farmName: "Your farm", env }];
+  } else {
+    farmEnvs = await Promise.all(
+      farmGroups.slice(0, MAX_FARMS).map(async (g) => ({
+        farmId: g.id,
+        farmName: g.name,
+        env: await getFarmEnvironment(farmCenter(g.geometryJson)),
+      })),
+    );
   }
 
   // --- farm ---
@@ -205,7 +230,44 @@ async function buildSnapshot(orgId: string): Promise<Snapshot> {
     chips.activity = [`${eventRows.length} recent logs`];
   }
 
-  return { sections, chips };
+  return { sections, chips, farmEnvs };
+}
+
+// Group every location under its root farm (the topmost ancestor reached by
+// walking parentId). The root's name labels the farm; we keep all member
+// geometries so the farm's center is the median of everything mapped in it.
+// Cycle-guarded against bad parent data. Order is preserved (newest farm first,
+// since locations come back createdAt-desc).
+type LocRow = { id: string; name: string; parentId: string | null; geometry: string };
+type FarmGroup = { id: string; name: string; geometryJson: string[] };
+
+function groupByFarm(rows: LocRow[]): FarmGroup[] {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const rootOf = (start: LocRow): LocRow => {
+    let node = start;
+    const seen = new Set<string>([node.id]);
+    while (node.parentId) {
+      const parent = byId.get(node.parentId);
+      if (!parent || seen.has(parent.id)) break;
+      seen.add(parent.id);
+      node = parent;
+    }
+    return node;
+  };
+
+  const groups = new Map<string, FarmGroup>();
+  const order: string[] = [];
+  for (const r of rows) {
+    const root = rootOf(r);
+    let g = groups.get(root.id);
+    if (!g) {
+      g = { id: root.id, name: root.name, geometryJson: [] };
+      groups.set(root.id, g);
+      order.push(root.id);
+    }
+    g.geometryJson.push(r.geometry);
+  }
+  return order.map((id) => groups.get(id)!);
 }
 
 async function getSnapshot(orgId: string): Promise<Snapshot> {
@@ -216,11 +278,43 @@ async function getSnapshot(orgId: string): Promise<Snapshot> {
   return snapshot;
 }
 
+// Render the per-farm environment, foregrounding the farm the user is currently
+// looking at on the map. With one farm it's just that farm's full digest; with
+// several, the in-view farm gets the full digest and the rest a one-line summary,
+// plus an instruction so the experts answer about the right farm (or all of them).
+function assembleEnvironment(
+  farmEnvs: FarmEnvEntry[],
+  focusedFarmId: string | null,
+): { text: string; chips: string[] } {
+  if (farmEnvs.length === 0) return { text: "Location not available.", chips: [] };
+  if (farmEnvs.length === 1) {
+    return { text: farmEnvs[0].env.text, chips: farmEnvs[0].env.chips };
+  }
+
+  const focused =
+    farmEnvs.find((f) => f.farmId === focusedFarmId) ?? farmEnvs[0];
+  const others = farmEnvs.filter((f) => f !== focused);
+
+  const lines = [
+    `The farmer has ${farmEnvs.length} farms mapped and is currently viewing **${focused.farmName}** on the map. ` +
+      `Unless they name a different farm or ask about all of them, answer about ${focused.farmName}.`,
+    "",
+    `### ${focused.farmName} — in view`,
+    focused.env.text,
+  ];
+  for (const o of others) {
+    lines.push("", `### ${o.farmName}`, o.env.summary);
+  }
+  return { text: lines.join("\n"), chips: focused.env.chips };
+}
+
 // Assemble only the requested slices into a single context block, plus a deduped
 // set of "chips" summarizing what the experts can see (shown in the chat UI).
+// `focusedFarmId` is the farm currently in the map viewport, if any.
 export async function buildFarmContext(
   orgId: string,
   slices: ContextSlice[],
+  focusedFarmId?: string | null,
 ): Promise<{ text: string; chips: string[] }> {
   const snapshot = await getSnapshot(orgId);
   const wanted = [...new Set(slices)];
@@ -234,11 +328,23 @@ export async function buildFarmContext(
     activity: "RECENT ACTIVITY",
   };
 
+  const environment = assembleEnvironment(snapshot.farmEnvs, focusedFarmId ?? null);
+
   const text = wanted
-    .map((slice) => `## ${labels[slice]}\n${snapshot.sections[slice]}`)
+    .map((slice) => {
+      const body =
+        slice === "environment" ? environment.text : snapshot.sections[slice];
+      return `## ${labels[slice]}\n${body}`;
+    })
     .join("\n\n");
 
-  const chips = [...new Set(wanted.flatMap((slice) => snapshot.chips[slice] ?? []))];
+  const chips = [
+    ...new Set(
+      wanted.flatMap((slice) =>
+        slice === "environment" ? environment.chips : (snapshot.chips[slice] ?? []),
+      ),
+    ),
+  ];
 
   return { text, chips };
 }
