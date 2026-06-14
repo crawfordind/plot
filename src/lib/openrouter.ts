@@ -71,6 +71,92 @@ export async function chatCompletion(messages: ChatMessage[], opts: CompletionOp
   }
 }
 
+// Stream a chat completion as plain text deltas. Unlike chatCompletion this does
+// NOT force a JSON response_format — the chat UI wants free-form markdown that it
+// can render token-by-token. Yields content fragments as they arrive over SSE.
+export async function* streamChatCompletion(
+  messages: ChatMessage[],
+  opts: CompletionOpts = {},
+): AsyncGenerator<string> {
+  const apiKey = process.env.OPENROUTER_API_KEY;
+  if (!apiKey) {
+    throw new Error("OPENROUTER_API_KEY is not configured");
+  }
+
+  const primary = process.env.OPENROUTER_MODEL ?? DEFAULT_MODEL;
+  const fallback = process.env.OPENROUTER_FALLBACK_MODEL ?? FALLBACK_MODEL;
+  const resolved = { maxTokens: opts.maxTokens ?? 700, temperature: opts.temperature ?? 0.4 };
+
+  try {
+    yield* streamRequest(primary, messages, apiKey, resolved);
+  } catch (primaryError) {
+    if (primary === fallback) throw primaryError;
+    try {
+      yield* streamRequest(fallback, messages, apiKey, resolved);
+    } catch {
+      throw primaryError;
+    }
+  }
+}
+
+async function* streamRequest(
+  model: string,
+  messages: ChatMessage[],
+  apiKey: string,
+  opts: Required<CompletionOpts>,
+): AsyncGenerator<string> {
+  const response = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
+      "X-Title": "Plot",
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature: opts.temperature,
+      max_tokens: opts.maxTokens,
+      stream: true,
+    }),
+  });
+
+  if (!response.ok || !response.body) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`${model}: ${response.status} ${text}`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  // OpenRouter streams Server-Sent Events: lines of "data: {json}" separated by
+  // blank lines, plus periodic ": OPENROUTER PROCESSING" comments we skip.
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let nl: number;
+    while ((nl = buffer.indexOf("\n")) !== -1) {
+      const line = buffer.slice(0, nl).trim();
+      buffer = buffer.slice(nl + 1);
+      if (!line.startsWith("data:")) continue;
+      const payload = line.slice(5).trim();
+      if (payload === "[DONE]") return;
+      try {
+        const json = JSON.parse(payload);
+        const delta = json.choices?.[0]?.delta?.content;
+        if (typeof delta === "string" && delta) yield delta;
+      } catch {
+        // Partial JSON across chunk boundaries is rare with line buffering, but
+        // tolerate it: skip this line rather than aborting the whole stream.
+      }
+    }
+  }
+}
+
 // Multimodal message content for vision calls (OpenAI/OpenRouter shape).
 type VisionContentPart =
   | { type: "text"; text: string }
