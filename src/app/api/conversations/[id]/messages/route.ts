@@ -28,6 +28,9 @@ const sendSchema = z.object({
     .refine((ids) => ids.every(isExpertId), "Unknown expert"),
   content: z.string().trim().min(1, "Say something first").max(8000),
   attachmentIds: z.array(z.string()).max(8).optional(),
+  // The farm currently in the map viewport, so experts default to it when the
+  // farmer's question doesn't name a farm.
+  focusedFarmId: z.string().optional(),
 });
 
 type Params = { params: Promise<{ id: string }> };
@@ -106,7 +109,7 @@ export async function POST(request: Request, { params }: Params) {
   // Shared farm context (union of the selected experts' slices).
   let context: { text: string; chips: string[] };
   try {
-    context = await buildFarmContext(org.id, slices);
+    context = await buildFarmContext(org.id, slices, body.focusedFarmId);
   } catch (err) {
     console.error("[conversations/messages] context build failed:", err);
     return jsonError("Couldn't load your farm context", 500);
@@ -135,7 +138,7 @@ export async function POST(request: Request, { params }: Params) {
         : "",
       `You are ${e.name}, ${e.title}.`,
       e.systemPrompt,
-      "Be practical and concise. Ground advice in the FARM CONTEXT and any ATTACHED FILES when relevant, and say when you're assuming. Use the DATE, PLACE & WEATHER context to make timing-aware recommendations (current season, today's conditions, the forecast, frost risk, recent rainfall, and soil temperature) rather than generic ones. Never invent farm data that isn't provided. Use markdown (bold, bullets, tables) but keep it tight.",
+      "Be practical and concise. Ground advice in the FARM CONTEXT and any ATTACHED FILES when relevant, and say when you're assuming. Use the DATE, PLACE & WEATHER context to make timing-aware recommendations (current season, today's conditions, the forecast, frost risk, recent rainfall, and soil temperature) rather than generic ones. If the farmer has more than one farm, default to the one marked 'in view' unless they name another farm or ask about all of them — each farm has its own location, weather, and hardiness zone, so don't mix them up. Never invent farm data that isn't provided. Use markdown (bold, bullets, tables) but keep it tight.",
       sharedContext,
     ]
       .filter(Boolean)

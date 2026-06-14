@@ -15,6 +15,9 @@ import { useConversations } from "./useConversations";
 type ExpertChatProps = {
   open: boolean;
   onClose: () => void;
+  // The farm currently centered in the map viewport, so the experts know which
+  // farm the user is most likely asking about. Null when no farm is in view.
+  focusedFarmId?: string | null;
 };
 
 type AttachmentRef = { fileName: string; kind: "image" | "document" };
@@ -89,7 +92,7 @@ function relativeTime(ms: number): string {
 
 // A modern, persistent farm-advisory chat: pick one or a few experts, attach
 // photos/docs, stream replies, and revisit any past thread from history.
-export default function ExpertChat({ open, onClose }: ExpertChatProps) {
+export default function ExpertChat({ open, onClose, focusedFarmId }: ExpertChatProps) {
   const convos = useConversations();
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -343,7 +346,12 @@ export default function ExpertChat({ open, onClose }: ExpertChatProps) {
       const res = await fetch(`/api/conversations/${convId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ expertIds: selected, content, attachmentIds }),
+        body: JSON.stringify({
+          expertIds: selected,
+          content,
+          attachmentIds,
+          focusedFarmId: focusedFarmId ?? undefined,
+        }),
       });
       if (!res.ok || !res.body) {
         const data = await res.json().catch(() => ({}));
