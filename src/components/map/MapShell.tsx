@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Map as MaplibreMap } from "maplibre-gl";
 import CoachPanel from "@/components/coach/CoachPanel";
 import CoachToast from "@/components/coach/CoachToast";
+import ExpertChat from "@/components/experts/ExpertChat";
 import RecordsPanel from "@/components/crud/RecordsPanel";
 import GrazingPanel from "@/components/grazing/GrazingPanel";
 import EventEditSheet from "@/components/events/EventEditSheet";
@@ -188,6 +189,7 @@ export default function MapShell({ userName }: MapShellProps) {
   const [farmDraftName, setFarmDraftName] = useState<string | null>(null);
   const [showNewFarm, setShowNewFarm] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
+  const [showChat, setShowChat] = useState(false);
   // Geometry-edit targets: the ids the user chose to transform. One id edits that
   // location (its descendants follow). Several ids transform together via a
   // synthetic bounding-box gizmo.
@@ -403,6 +405,7 @@ export default function MapShell({ userName }: MapShellProps) {
     showGrazing ||
     showWorkspace ||
     showNewFarm ||
+    showChat ||
     !!editingLocation ||
     !!editingPlanting ||
     !!editingEvent ||
@@ -973,6 +976,9 @@ export default function MapShell({ userName }: MapShellProps) {
               setEditDraft(g);
               setEditChildDrafts(children);
             }}
+            onCapturePhoto={() => setShowCapture(true)}
+            onAskExpert={() => setShowChat(true)}
+            fabActionsHidden={overlayOpen || manipulating}
           />
 
           <FarmBar
@@ -997,19 +1003,6 @@ export default function MapShell({ userName }: MapShellProps) {
             }}
             hidden={overlayOpen}
           />
-
-          {/* Global "farm photo" capture — always-on-hand camera for general
-              shots, auto-filed to the nearest asset and read by the AI. */}
-          {!overlayOpen && !manipulating && (
-            <button
-              type="button"
-              onClick={() => setShowCapture(true)}
-              aria-label="Take a farm photo"
-              className="absolute bottom-36 right-3 z-20 flex h-12 w-12 items-center justify-center rounded-full bg-emerald-600 text-xl text-white shadow-lg active:bg-emerald-700"
-            >
-              📷
-            </button>
-          )}
 
           {loaded &&
             locations.length === 0 &&
@@ -1194,6 +1187,8 @@ export default function MapShell({ userName }: MapShellProps) {
           mapCenter={mapCenter}
           onSaved={refreshData}
         />
+
+        <ExpertChat open={showChat} onClose={() => setShowChat(false)} />
 
         {showBuilder && (
           <StructureBuilder

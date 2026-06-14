@@ -42,7 +42,10 @@ export type IconName =
   | "clock"
   | "warning"
   | "cross"
-  | "users";
+  | "users"
+  | "camera"
+  | "chat"
+  | "send";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   users: (
@@ -252,6 +255,19 @@ const PATHS: Record<IconName, React.ReactNode> = {
     </>
   ),
   cross: <path d="M7 7l10 10M17 7 7 17" />,
+  camera: (
+    <>
+      <path d="M4 8a2 2 0 0 1 2-2h1.5l1.3-2h6.4l1.3 2H18a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V8Z" />
+      <circle cx="12" cy="13" r="3.2" />
+    </>
+  ),
+  chat: (
+    <>
+      <path d="M20 11.5a7.5 7.5 0 0 1-10.9 6.7L4 19.5l1.3-4A7.5 7.5 0 1 1 20 11.5Z" />
+      <path d="M8.5 11h7M8.5 14h4.5" />
+    </>
+  ),
+  send: <path d="M4.5 12 20 4.5 14 20l-3.2-6.3L4.5 12Z" />,
 };
 
 type IconProps = SVGProps<SVGSVGElement> & {

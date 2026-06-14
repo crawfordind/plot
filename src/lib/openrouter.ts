@@ -8,7 +8,14 @@ type ChatMessage = {
   content: string;
 };
 
-async function requestCompletion(model: string, messages: ChatMessage[], apiKey: string) {
+type CompletionOpts = { maxTokens?: number; temperature?: number };
+
+async function requestCompletion(
+  model: string,
+  messages: ChatMessage[],
+  apiKey: string,
+  opts: Required<CompletionOpts>,
+) {
   const response = await fetch(OPENROUTER_URL, {
     method: "POST",
     headers: {
@@ -20,8 +27,8 @@ async function requestCompletion(model: string, messages: ChatMessage[], apiKey:
     body: JSON.stringify({
       model,
       messages,
-      temperature: 0.1,
-      max_tokens: 400,
+      temperature: opts.temperature,
+      max_tokens: opts.maxTokens,
       response_format: { type: "json_object" },
     }),
   });
@@ -41,7 +48,7 @@ async function requestCompletion(model: string, messages: ChatMessage[], apiKey:
   return content;
 }
 
-export async function chatCompletion(messages: ChatMessage[]) {
+export async function chatCompletion(messages: ChatMessage[], opts: CompletionOpts = {}) {
   const apiKey = process.env.OPENROUTER_API_KEY;
   if (!apiKey) {
     throw new Error("OPENROUTER_API_KEY is not configured");
@@ -49,14 +56,15 @@ export async function chatCompletion(messages: ChatMessage[]) {
 
   const primary = process.env.OPENROUTER_MODEL ?? DEFAULT_MODEL;
   const fallback = process.env.OPENROUTER_FALLBACK_MODEL ?? FALLBACK_MODEL;
+  const resolved = { maxTokens: opts.maxTokens ?? 400, temperature: opts.temperature ?? 0.1 };
 
   try {
-    return await requestCompletion(primary, messages, apiKey);
+    return await requestCompletion(primary, messages, apiKey, resolved);
   } catch (primaryError) {
     if (primary === fallback) throw primaryError;
 
     try {
-      return await requestCompletion(fallback, messages, apiKey);
+      return await requestCompletion(fallback, messages, apiKey, resolved);
     } catch {
       throw primaryError;
     }
