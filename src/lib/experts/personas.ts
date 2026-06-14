@@ -6,7 +6,13 @@
 
 // Which parts of the org's farm snapshot an expert wants to see. The route
 // unions the slices across the selected experts and builds only those sections.
-export type ContextSlice = "farm" | "crops" | "livestock" | "soil" | "activity";
+export type ContextSlice =
+  | "environment"
+  | "farm"
+  | "crops"
+  | "livestock"
+  | "soil"
+  | "activity";
 
 export type ExpertId =
   | "plot_assistant"
@@ -47,7 +53,7 @@ export const EXPERTS: Expert[] = [
       "Summarize my recent activity and flag anything off.",
     ],
     // The generalist sees the whole picture.
-    slices: ["farm", "crops", "livestock", "soil", "activity"],
+    slices: ["environment", "farm", "crops", "livestock", "soil", "activity"],
     systemPrompt:
       "You are Plot Assistant, a knowledgeable, friendly general-purpose assistant " +
       "built into a farm-mapping app. You can help with anything the farmer asks — " +
@@ -73,7 +79,7 @@ export const EXPERTS: Expert[] = [
       "How do I stop the pest pressure I'm seeing?",
       "Is my crop rotation set up well for next season?",
     ],
-    slices: ["farm", "crops", "activity"],
+    slices: ["environment", "farm", "crops", "activity"],
     systemPrompt:
       "You are an experienced agronomist. Your domain: crop and variety selection, " +
       "planting and succession timing, integrated pest and disease management (IPM), " +
@@ -95,7 +101,7 @@ export const EXPERTS: Expert[] = [
       "How long should pastures rest before regrazing?",
       "What should I watch for in my herd this season?",
     ],
-    slices: ["farm", "livestock", "activity"],
+    slices: ["environment", "farm", "livestock", "activity"],
     systemPrompt:
       "You are a USDA/NRCS-aligned livestock and grazing specialist. Your domain: " +
       "pasture-based animal husbandry, stocking rate and forage-animal balance, " +
@@ -117,7 +123,7 @@ export const EXPERTS: Expert[] = [
       "What soil tests should I run, and when?",
       "Which cover crop fits my situation?",
     ],
-    slices: ["farm", "soil", "crops", "activity"],
+    slices: ["environment", "farm", "soil", "crops", "activity"],
     systemPrompt:
       "You are a soil scientist. Your domain: soil health and biology, soil testing and " +
       "interpretation, organic matter, pH and liming, nutrient cycling, amendments, " +

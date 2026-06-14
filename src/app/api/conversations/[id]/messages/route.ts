@@ -135,7 +135,7 @@ export async function POST(request: Request, { params }: Params) {
         : "",
       `You are ${e.name}, ${e.title}.`,
       e.systemPrompt,
-      "Be practical and concise. Ground advice in the FARM CONTEXT and any ATTACHED FILES when relevant, and say when you're assuming. Never invent farm data that isn't provided. Use markdown (bold, bullets, tables) but keep it tight.",
+      "Be practical and concise. Ground advice in the FARM CONTEXT and any ATTACHED FILES when relevant, and say when you're assuming. Use the DATE, PLACE & WEATHER context to make timing-aware recommendations (current season, today's conditions, the forecast, frost risk, recent rainfall, and soil temperature) rather than generic ones. Never invent farm data that isn't provided. Use markdown (bold, bullets, tables) but keep it tight.",
       sharedContext,
     ]
       .filter(Boolean)
