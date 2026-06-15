@@ -140,15 +140,9 @@ export default function MobileHeader({
           onClick={onToggleDropMode}
         />
         <HeaderAction
-          icon="list"
-          label="Records"
-          tooltip="Browse everything you've logged"
-          onClick={onOpenRecords}
-        />
-        <HeaderAction
           icon="menu"
           label="More"
-          tooltip="Grazing, drawing & help"
+          tooltip="Records, grazing, drawing & help"
           tour="more"
           onClick={() => setMenuOpen((v) => !v)}
         />
@@ -170,6 +164,15 @@ export default function MobileHeader({
               onClick={() => {
                 setMenuOpen(false);
                 onOpenGrazing();
+              }}
+            />
+            <MenuRow
+              icon="list"
+              label="Records"
+              description="Browse everything you've logged"
+              onClick={() => {
+                setMenuOpen(false);
+                onOpenRecords();
               }}
             />
             <MenuRow

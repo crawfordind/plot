@@ -167,6 +167,8 @@ export async function POST(request: Request, { params }: Params) {
       "",
       "=== ACTING ON THE FARM (you are an agent, not just a chatbot) ===",
       "You can take actions through tools, not only give advice. When the farmer reports something they did or saw — or asks you to log it — call log_activity. The farmer reviews and confirms every action before it is saved, so don't over-ask: infer sensible defaults (today's date, the farm/area in view) and propose the log. Reach for query_activity when answering accurately needs more history than the snapshot above (counts, a place's full history, sales/cost totals). After you propose a log, tell the farmer in one line that it's ready for them to confirm.",
+      "",
+      "Grazing: call query_grazing to check where herds are and which paddocks are rested before answering rotation questions or recommending a move. When the farmer clearly asks to move stock (e.g. 'move the cows to the north paddock', 'pull them off pasture'), call move_herd — it records the move immediately and the farmer gets an Undo, so you don't need to ask them to confirm first. Only discussing or suggesting a move? Answer in text and don't call the tool.",
     ].join("\n");
 
   // Single Plot Assistant → agentic loop with tools. The multi-expert panel and
@@ -175,6 +177,7 @@ export async function POST(request: Request, { params }: Params) {
   const agentic = experts.length === 1 && experts[0].id === "plot_assistant";
   const toolCtx: AgentToolContext = {
     orgId: org.id,
+    userId: user.id,
     focusedFarmId: body.focusedFarmId ?? null,
   };
 
@@ -290,6 +293,36 @@ export async function POST(request: Request, { params }: Params) {
                   role: "tool",
                   tool_call_id: call.id,
                   content: result,
+                });
+              } else if (tool.kind === "action") {
+                // Action tools mutate immediately. Emit any Undo affordance to the
+                // client, feed the summary back so the model narrates the result,
+                // and keep the loop going (no confirm card to wait on).
+                let result;
+                try {
+                  result = await tool.run(args, toolCtx);
+                } catch (err) {
+                  console.error(`[messages] action ${call.name} failed:`, err);
+                  convoMessages.push({
+                    role: "tool",
+                    tool_call_id: call.id,
+                    content: "That action couldn't be completed.",
+                  });
+                  continue;
+                }
+                if (result.undo) {
+                  send({
+                    type: "action",
+                    expertId: e.id,
+                    callId: call.id,
+                    name: call.name,
+                    undo: result.undo,
+                  });
+                }
+                convoMessages.push({
+                  role: "tool",
+                  tool_call_id: call.id,
+                  content: result.summary,
                 });
               } else {
                 // Write tool: don't persist — hand a proposal to the client to

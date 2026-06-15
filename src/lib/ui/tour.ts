@@ -30,7 +30,7 @@ export const TOUR_STEPS: TourStep[] = [
   {
     target: "more",
     title: "Everything else lives here",
-    body: "Open More for Grazing (herds, paddocks, NRCS records), Draw paddock, and to replay this tour anytime.",
+    body: "Open More to browse your Records, plus Grazing (herds, paddocks, NRCS), Draw paddock, and to replay this tour anytime.",
   },
 ];
 
