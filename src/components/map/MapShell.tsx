@@ -10,7 +10,7 @@ import RecordsPanel from "@/components/crud/RecordsPanel";
 import GrazingPanel from "@/components/grazing/GrazingPanel";
 import EventEditSheet from "@/components/events/EventEditSheet";
 import EventForm from "@/components/events/EventForm";
-import LogCapture from "@/components/log/LogCapture";
+import ChatDock from "@/components/map/ChatDock";
 import LocationEditSheet from "@/components/locations/LocationEditSheet";
 import LocationPanel from "@/components/locations/LocationPanel";
 import AssetDragLayer, { type AssetDragHandle } from "@/components/map/AssetDragLayer";
@@ -192,6 +192,9 @@ export default function MapShell({ userName }: MapShellProps) {
   const [showNewFarm, setShowNewFarm] = useState(false);
   const [showCapture, setShowCapture] = useState(false);
   const [showChat, setShowChat] = useState(false);
+  // Text to auto-send when the chat opens from the bottom dock (it "expands" the
+  // dock into the full conversation).
+  const [chatSeed, setChatSeed] = useState<string | undefined>();
   // Geometry-edit targets: the ids the user chose to transform. One id edits that
   // location (its descendants follow). Several ids transform together via a
   // synthetic bounding-box gizmo.
@@ -1139,11 +1142,14 @@ export default function MapShell({ userName }: MapShellProps) {
 
         {!overlayOpen && (
           <div data-tour="log" className="shrink-0">
-            <LogCapture
+            <ChatDock
               locations={locations}
-              plantings={plantings}
               selectedLocationId={selectedLocationId}
-              onSaved={handleDataSaved}
+              onSend={(text) => {
+                setChatSeed(text);
+                setLogCollapsed(true);
+                setShowChat(true);
+              }}
               onManualForm={() => setShowEventForm(true)}
               starterText={logStarter}
               onStarterConsumed={() => setLogStarter(undefined)}
@@ -1186,6 +1192,8 @@ export default function MapShell({ userName }: MapShellProps) {
           locations={locations}
           plantings={plantings}
           onLogged={refreshData}
+          seed={chatSeed}
+          onSeedConsumed={() => setChatSeed(undefined)}
         />
 
         {showBuilder && (

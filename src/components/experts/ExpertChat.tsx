@@ -28,6 +28,10 @@ type ExpertChatProps = {
   // Called after the user confirms an agent-proposed log, so the map/records can
   // refresh to show the new event.
   onLogged?: () => void;
+  // A message to auto-send when the chat opens (used when the user starts typing
+  // in the bottom dock and the chat expands). Cleared via onSeedConsumed.
+  seed?: string;
+  onSeedConsumed?: () => void;
 };
 
 // A log the agent has proposed (via the log_activity tool) and is waiting for
@@ -115,6 +119,8 @@ export default function ExpertChat({
   locations,
   plantings,
   onLogged,
+  seed,
+  onSeedConsumed,
 }: ExpertChatProps) {
   const convos = useConversations();
 
@@ -168,6 +174,21 @@ export default function ExpertChat({
   useEffect(() => {
     scrollerRef.current?.scrollTo({ top: scrollerRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, sending]);
+
+  // Auto-send a seed message when the chat opens from the bottom dock. We call
+  // the latest `send` via a ref so this effect only re-runs on open/seed change,
+  // not on every render, and consume the seed immediately so it fires once.
+  const sendRef = useRef<(text: string) => Promise<void>>(undefined);
+  useEffect(() => {
+    sendRef.current = send;
+  });
+  useEffect(() => {
+    if (!open || !seed || !seed.trim()) return;
+    const text = seed;
+    onSeedConsumed?.();
+    void sendRef.current?.(text);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, seed]);
 
   function toggleExpert(id: ExpertId) {
     setSelected((prev) => {
