@@ -48,7 +48,16 @@ type AssistantMessage = {
   streaming: boolean;
   failed: boolean;
 };
-type Message = UserMessage | AssistantMessage;
+// An action the agent executed (e.g. a herd move) shown inline with an Undo.
+// `undo` is the handles to reverse it, or null once it has been undone.
+type ActionMessage = {
+  id: string;
+  role: "action";
+  label: string;
+  undo: { openedEventId: string | null; closedEventId: string | null } | null;
+  undoing: boolean;
+};
+type Message = UserMessage | AssistantMessage | ActionMessage;
 
 type Pending = {
   id: string;
@@ -65,6 +74,14 @@ type StreamEvent =
   | { type: "title"; title: string }
   // The agent wants to log something — surface a confirm card.
   | { type: "tool_call"; expertId: ExpertId; callId: string; name: string; proposal: LogProposal }
+  // The agent executed a reversible action (e.g. moved a herd) — show an Undo.
+  | {
+      type: "action";
+      expertId: ExpertId;
+      callId: string;
+      name: string;
+      undo: { label: string; openedEventId: string | null; closedEventId: string | null };
+    }
   | { type: "end" };
 
 // Static Tailwind classes per accent (kept literal so they survive purge).
@@ -349,6 +366,23 @@ export default function ExpertChat({
       if (evt.name === "log_activity") {
         setPendingActions((prev) => [...prev, evt.proposal]);
       }
+    } else if (evt.type === "action") {
+      const turn = `${(turnRef.current += 1)}`;
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: `act-${turn}`,
+          role: "action",
+          label: evt.undo.label,
+          undo: {
+            openedEventId: evt.undo.openedEventId,
+            closedEventId: evt.undo.closedEventId,
+          },
+          undoing: false,
+        },
+      ]);
+      // The action already hit the DB — refresh the map/grazing behind the chat.
+      onLogged?.();
     } else if (evt.type === "title") {
       setActiveTitle(evt.title);
       convos.setTitleLocal(convId, evt.title);
@@ -477,6 +511,44 @@ export default function ExpertChat({
     onLogged?.();
   }
 
+  // Reverse an executed move: delete the period we opened and re-open the one we
+  // closed — the same inverse the map's drag-drop Undo applies.
+  async function undoMove(
+    id: string,
+    undo: { openedEventId: string | null; closedEventId: string | null },
+  ) {
+    setMessages((prev) =>
+      prev.map((m) => (m.id === id && m.role === "action" ? { ...m, undoing: true } : m)),
+    );
+    try {
+      if (undo.openedEventId) {
+        const res = await fetch(`/api/grazing/events/${undo.openedEventId}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) throw new Error();
+      }
+      if (undo.closedEventId) {
+        const res = await fetch(`/api/grazing/events/${undo.closedEventId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ movedOutAt: null, heightOutIn: null }),
+        });
+        if (!res.ok) throw new Error();
+      }
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === id && m.role === "action" ? { ...m, undo: null, undoing: false } : m,
+        ),
+      );
+      onLogged?.();
+    } catch {
+      setError("Couldn't undo that move.");
+      setMessages((prev) =>
+        prev.map((m) => (m.id === id && m.role === "action" ? { ...m, undoing: false } : m)),
+      );
+    }
+  }
+
   async function commitRename(id: string) {
     const title = renameValue.trim();
     setRenamingId(null);
@@ -582,7 +654,13 @@ export default function ExpertChat({
           )}
 
           {messages.map((m) =>
-            m.role === "user" ? (
+            m.role === "action" ? (
+              <ActionRow
+                key={m.id}
+                message={m}
+                onUndo={() => m.undo && undoMove(m.id, m.undo)}
+              />
+            ) : m.role === "user" ? (
               <div key={m.id} className="flex flex-col items-end gap-1">
                 {m.attachments.length > 0 && (
                   <div className="flex max-w-[85%] flex-wrap justify-end gap-1.5">
@@ -831,6 +909,36 @@ export default function ExpertChat({
         )}
       </div>
     </BottomSheet>
+  );
+}
+
+function ActionRow({
+  message,
+  onUndo,
+}: {
+  message: ActionMessage;
+  onUndo: () => void;
+}) {
+  const undone = message.undo === null;
+  return (
+    <div className="flex items-center justify-between gap-2 rounded-xl border border-emerald-100 bg-emerald-50/60 px-3 py-2 text-sm">
+      <span className="flex min-w-0 items-center gap-1.5 text-emerald-800">
+        <Icon name={undone ? "undo" : "herd"} size={15} />
+        <span className="truncate">
+          {undone ? `Undone — ${message.label}` : message.label}
+        </span>
+      </span>
+      {!undone && (
+        <button
+          type="button"
+          onClick={onUndo}
+          disabled={message.undoing}
+          className="shrink-0 rounded-lg border border-emerald-200 px-2.5 py-1 text-xs font-semibold text-emerald-700 active:bg-emerald-100 disabled:opacity-50"
+        >
+          {message.undoing ? "Undoing…" : "Undo"}
+        </button>
+      )}
+    </div>
   );
 }
 
