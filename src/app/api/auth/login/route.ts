@@ -28,6 +28,9 @@ export async function POST(request: Request) {
     if (error instanceof ZodError) {
       return handleZodError(error);
     }
+    // Surface the real cause in server logs; the client still gets a generic
+    // message. Without this, prod 500s show up blank and can't be diagnosed.
+    console.error("POST /api/auth/login failed:", error);
     return jsonError("Login failed", 500);
   }
 }
