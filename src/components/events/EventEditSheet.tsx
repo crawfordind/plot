@@ -8,6 +8,7 @@ import DeleteButton from "@/components/ui/DeleteButton";
 import Sheet from "@/components/ui/Sheet";
 import { useToast } from "@/components/ui/toast/ToastProvider";
 import { apiFetch, getErrorMessage } from "@/lib/client";
+import { fromLocalInputValue, toLocalInputValue } from "@/lib/datetime";
 import type { EventRecord, EventType, LocationRecord, PlantingRecord } from "@/lib/types";
 
 type EventEditSheetProps = {
@@ -46,7 +47,7 @@ export default function EventEditSheet({
   const [type, setType] = useState<EventType>(event.type);
   const [locationId, setLocationId] = useState(event.locationId ?? "");
   const [plantingId, setPlantingId] = useState(event.plantingId ?? "");
-  const [occurredAt, setOccurredAt] = useState(event.occurredAt.slice(0, 16));
+  const [occurredAt, setOccurredAt] = useState(toLocalInputValue(event.occurredAt));
   const [quantity, setQuantity] = useState(event.quantity?.toString() ?? "");
   const [unit, setUnit] = useState(event.unit ?? "");
   const [amount, setAmount] = useState(event.amount?.toString() ?? "");
@@ -70,7 +71,7 @@ export default function EventEditSheet({
           type,
           locationId: locationId || undefined,
           plantingId: plantingId || undefined,
-          occurredAt: new Date(occurredAt).toISOString(),
+          occurredAt: fromLocalInputValue(occurredAt),
           quantity: quantity ? Number(quantity) : undefined,
           unit: unit || undefined,
           amount: amount ? Number(amount) : undefined,

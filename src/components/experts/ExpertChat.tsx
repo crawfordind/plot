@@ -503,7 +503,10 @@ export default function ExpertChat({
         id: `log-${turn}`,
         role: "assistant",
         expertId: "plot_assistant",
-        content: `✓ Logged. ${saveTip ?? ""}`.trim(),
+        // `saveTip` already opens with "Logged." (single) or "Saved N logs."
+        // (batch), so prefix only the check mark — otherwise it reads
+        // "✓ Logged. Logged. …".
+        content: `✓ ${saveTip?.trim() || "Logged."}`,
         streaming: false,
         failed: false,
       },
@@ -681,6 +684,10 @@ export default function ExpertChat({
                   </div>
                 )}
               </div>
+            ) : !m.content && !m.streaming && !m.failed ? (
+              // A turn that only produced a tool call (e.g. log_activity → confirm
+              // card) leaves an empty placeholder behind — don't render a blank bubble.
+              null
             ) : (
               <AssistantBubble
                 key={m.id}

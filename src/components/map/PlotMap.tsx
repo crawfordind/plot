@@ -33,6 +33,11 @@ const POINT_MOVE_LAYER = "edit-point";
 
 // Satellite basemap: Esri World Imagery raster tiles + a glyph endpoint so the
 // location labels (symbol layers) still render over the imagery.
+// NOTE: every symbol layer must set `text-font` to a single stack this host
+// actually serves (e.g. "Open Sans Regular"). The MapLibre default stack
+// ("Open Sans Regular,Arial Unicode MS Regular") 404s here and the HTML error
+// page fails PBF decoding ("Unimplemented type: 4"), so labels fall back to
+// blurry local rasterization. Keep the per-layer `text-font` in sync with this.
 const SATELLITE_STYLE = {
   version: 8,
   glyphs: "https://fonts.openmaptiles.org/{fontstack}/{range}.pbf",
@@ -733,6 +738,7 @@ export default function PlotMap({
             filter={["==", ["geometry-type"], "Polygon"]}
             layout={{
               "text-field": ["get", "name"],
+              "text-font": ["Open Sans Regular"],
               "text-size": 11,
               "text-anchor": "center",
               "text-allow-overlap": false,
@@ -777,6 +783,7 @@ export default function PlotMap({
             type="symbol"
             layout={{
               "text-field": ["get", "name"],
+              "text-font": ["Open Sans Regular"],
               "text-size": 11,
               "text-offset": [0, 1.7],
               "text-anchor": "top",

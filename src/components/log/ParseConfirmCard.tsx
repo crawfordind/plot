@@ -6,6 +6,7 @@ import Button from "@/components/ui/Button";
 import Callout from "@/components/ui/Callout";
 import { useToast } from "@/components/ui/toast/ToastProvider";
 import { apiFetch, getErrorMessage } from "@/lib/client";
+import { fromLocalInputValue, toLocalInputValue } from "@/lib/datetime";
 import { formatParseSummary, getPostSaveTip } from "@/lib/coach/tips";
 import type { ResolvedParse } from "@/lib/parse/schema";
 import type { EventType, LocationRecord, PlantingRecord, PlantType } from "@/lib/types";
@@ -66,7 +67,7 @@ function buildEntry(
     type: overrides.type,
     locationId: overrides.locationId || undefined,
     plantingId: overrides.plantingId || undefined,
-    occurredAt: new Date(overrides.occurredAt).toISOString(),
+    occurredAt: fromLocalInputValue(overrides.occurredAt),
     quantity: overrides.quantity ? Number(overrides.quantity) : undefined,
     unit: overrides.unit || undefined,
     amount: overrides.amount ? Number(overrides.amount) : undefined,
@@ -99,7 +100,7 @@ export default function ParseConfirmCard({
   const [type, setType] = useState<EventType>(resolved.type);
   const [locationId, setLocationId] = useState(resolved.locationId ?? "");
   const [plantingId, setPlantingId] = useState(resolved.plantingId ?? "");
-  const [occurredAt, setOccurredAt] = useState(resolved.occurredAt.slice(0, 16));
+  const [occurredAt, setOccurredAt] = useState(toLocalInputValue(resolved.occurredAt));
   const [quantity, setQuantity] = useState(resolved.quantity?.toString() ?? "");
   const [unit, setUnit] = useState(resolved.unit ?? "");
   const [amount, setAmount] = useState(resolved.amount?.toString() ?? "");
@@ -121,7 +122,7 @@ export default function ParseConfirmCard({
     ...resolved,
     type,
     locationName: locations.find((l) => l.id === locationId)?.name ?? resolved.locationName,
-    occurredAt: new Date(occurredAt).toISOString(),
+    occurredAt: occurredAt ? fromLocalInputValue(occurredAt) : resolved.occurredAt,
     quantity: quantity ? Number(quantity) : null,
     unit: unit || null,
     amount: amount ? Number(amount) : null,
@@ -153,7 +154,7 @@ export default function ParseConfirmCard({
             type: item.type,
             locationId: item.locationId ?? locationId,
             plantingId: item.plantingId ?? plantingId,
-            occurredAt: item.occurredAt.slice(0, 16),
+            occurredAt: toLocalInputValue(item.occurredAt),
             quantity: item.quantity?.toString() ?? "",
             unit: item.unit ?? "",
             amount: item.amount?.toString() ?? "",

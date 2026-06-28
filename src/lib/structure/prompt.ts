@@ -22,8 +22,9 @@ Allowed types, from largest to smallest:
 - farm: the whole property
 - field: an open growing area
 - zone: a named sub-area
-- hoophouse: a hoop house / high tunnel / greenhouse
-- bed: a growing bed inside a field, zone, or hoophouse
+- hoophouse: a hoop house / high tunnel / poly tunnel
+- greenhouse: a greenhouse / glasshouse (use this when they say "greenhouse", not hoophouse)
+- bed: a growing bed inside a field, zone, hoophouse, or greenhouse
 - row: a single row of plants inside a bed (drawn as a line)
 - alley: a walking path (drawn as a line)
 - fence: a fence line / perimeter (drawn as a line)
@@ -45,7 +46,7 @@ Rules:
 - Nest smaller things inside larger ones via "children" (max depth 4).
 - Use "count" to replicate siblings instead of repeating nodes. count:2 bed → "Bed 1", "Bed 2".
 - "name" is the base label only — never include the number yourself.
-- Containers are hoophouse, bed, field, zone, farm. Lines are row, alley, fence.
+- Containers are hoophouse, greenhouse, bed, field, zone, farm. Lines are row, alley, fence.
 - Only build what the grower describes. Do not invent extra structures.
 - If the description is too vague to place anything, return {"nodes": [], "summary": "<one clarifying question>"}.
 
