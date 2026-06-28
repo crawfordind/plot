@@ -87,7 +87,7 @@ function MenuRow({
         >
           {label}
         </span>
-        <span className="block truncate text-xs text-stone-500">{description}</span>
+        <span className="block text-xs leading-snug text-stone-500">{description}</span>
       </span>
     </button>
   );

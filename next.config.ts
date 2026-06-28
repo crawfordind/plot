@@ -1,6 +1,13 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  // Keep the dev-only on-screen indicator out of the bottom-left corner, where it
+  // sat on top of the destructive "Delete" button in bottom sheets (and the map's
+  // zoom controls). It only renders in `next dev`; production is unaffected.
+  devIndicators: {
+    position: "bottom-right",
+  },
+
   // `sharp` (used by the photo-analysis route to prep images for the vision LLM)
   // is a native addon: its JS binding dlopen()s a sibling libvips shared object.
   // Next's output file tracing bundles the .node binding but can miss the .so, so

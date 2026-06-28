@@ -14,8 +14,9 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Plot — Plant Tracker",
-  description: "Map-first plant tracking with natural language logging",
+  title: "Plot — Your farm, mapped",
+  description:
+    "Map your farm and track plantings, daily logs, and rotational grazing with natural-language logging.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
