@@ -1,8 +1,12 @@
 import type { LocationType } from "@/lib/locations/catalog";
+import type { CropFamily } from "@/lib/crops/family";
 
-export type { LocationType };
+export type { LocationType, CropFamily };
 export type PlantType = "crop" | "flower" | "tree" | "breeding_line";
 export type PlantingStatus = "active" | "harvested" | "archived";
+// Derived (not stored) maturity state for a planting, mirroring PaddockStatus.
+export type CropStatus = "growing" | "ready" | "harvesting" | "done";
+export type DtmFrom = "sow" | "transplant";
 export type EventType =
   | "sow"
   | "transplant"
@@ -52,6 +56,16 @@ export type PendingInviteRecord = {
   id: string;
   email: string;
   role: OrgRole;
+  createdAt: string;
+};
+
+// A personal access token for read-only external API access (e.g. QGIS). The raw
+// token is only ever returned once at creation; this is the safe-to-list shape.
+export type ApiTokenRecord = {
+  id: string;
+  name: string;
+  prefix: string;
+  lastUsedAt: string | null;
   createdAt: string;
 };
 
@@ -136,6 +150,12 @@ export type PlantingRecord = {
   status: PlantingStatus;
   seasonId: string | null;
   parentPlantingId: string | null;
+  sownAt: string | null;
+  transplantedAt: string | null;
+  expectedHarvestAt: string | null;
+  closedAt: string | null;
+  daysToMaturity: number | null;
+  cropFamily: CropFamily | null;
   createdAt: string;
 };
 
@@ -144,6 +164,9 @@ export type VarietyRecord = {
   name: string;
   plantType: PlantType;
   lineageParentIds: string[] | null;
+  daysToMaturity: number | null;
+  dtmFrom: DtmFrom | null;
+  cropFamily: CropFamily | null;
   notes: string | null;
   createdAt: string;
 };

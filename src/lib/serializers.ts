@@ -118,6 +118,14 @@ export function serializePlanting(row: PlantingRow) {
     status: row.status,
     seasonId: row.seasonId,
     parentPlantingId: row.parentPlantingId,
+    sownAt: row.sownAt ? row.sownAt.toISOString() : null,
+    transplantedAt: row.transplantedAt ? row.transplantedAt.toISOString() : null,
+    expectedHarvestAt: row.expectedHarvestAt
+      ? row.expectedHarvestAt.toISOString()
+      : null,
+    closedAt: row.closedAt ? row.closedAt.toISOString() : null,
+    daysToMaturity: row.daysToMaturity,
+    cropFamily: row.cropFamily,
     createdAt: row.createdAt.toISOString(),
   };
 }
@@ -137,6 +145,9 @@ export function serializeVariety(row: VarietyRow) {
     name: row.name,
     plantType: row.plantType,
     lineageParentIds,
+    daysToMaturity: row.daysToMaturity,
+    dtmFrom: row.dtmFrom,
+    cropFamily: row.cropFamily,
     notes: row.notes,
     createdAt: row.createdAt.toISOString(),
   };

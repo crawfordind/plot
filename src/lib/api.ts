@@ -1,6 +1,10 @@
+import { eq } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { ZodError } from "zod";
+import { db } from "@/db";
+import { apiTokens } from "@/db/schema";
 import { getActiveContext, getCurrentUser } from "@/lib/auth";
+import { hashToken, readToken } from "@/lib/tokens";
 import type { OrgRole } from "@/lib/types";
 
 export function jsonError(message: string, status = 400) {
@@ -72,6 +76,37 @@ export async function requireOrg() {
     return { user: null, org: null, sessionId: null, response: jsonError("Unauthorized", 401) };
   }
   return { user: ctx.user, org: ctx.org, sessionId: ctx.sessionId, response: null };
+}
+
+// The gate for read-only EXPORT routes (GeoJSON for QGIS, etc.). Accepts either a
+// logged-in browser session OR a personal access token (Authorization: Bearer …
+// or ?token=…). Returns the org the request may read. Token use bumps lastUsedAt.
+export async function requireExportAuth(
+  request: Request,
+): Promise<{ orgId: string; response: null } | { orgId: null; response: NextResponse }> {
+  const raw = readToken(request);
+  if (raw) {
+    const token = await db.query.apiTokens.findFirst({
+      where: eq(apiTokens.tokenHash, hashToken(raw)),
+    });
+    if (!token) {
+      return { orgId: null, response: jsonError("Invalid or revoked token", 401) };
+    }
+    // Best-effort recency stamp; never let it fail the request.
+    void db
+      .update(apiTokens)
+      .set({ lastUsedAt: new Date() })
+      .where(eq(apiTokens.id, token.id))
+      .catch(() => {});
+    return { orgId: token.orgId, response: null };
+  }
+
+  // Fall back to the browser session (so the same URLs work while signed in).
+  const ctx = await getActiveContext();
+  if (!ctx) {
+    return { orgId: null, response: jsonError("Unauthorized", 401) };
+  }
+  return { orgId: ctx.org.id, response: null };
 }
 
 // Guard an action behind a minimum role. Returns a 403 response when the role is

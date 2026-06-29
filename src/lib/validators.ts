@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { LOCATION_TYPE_VALUES } from "@/lib/locations/catalog";
+import { CROP_FAMILY_VALUES } from "@/lib/crops/family";
+
+export const cropFamilyEnum = z.enum(CROP_FAMILY_VALUES);
+export const dtmFromEnum = z.enum(["sow", "transplant"]);
 
 // Accepts what clients and the NL parser actually send: full ISO datetimes
 // (with or without timezone) and date-only strings like "2026-06-12".
@@ -125,6 +129,13 @@ export const createPlantingSchema = z.object({
   source: z.string().optional(),
   seasonId: z.string().nullable().optional(),
   parentPlantingId: z.string().nullable().optional(),
+  // Lifecycle dates. expectedHarvestAt is normally derived (sownAt +
+  // daysToMaturity) server-side, but may be passed to override.
+  sownAt: isoDateTime.optional(),
+  transplantedAt: isoDateTime.optional(),
+  expectedHarvestAt: isoDateTime.optional(),
+  daysToMaturity: z.number().int().positive().max(1000).optional(),
+  cropFamily: cropFamilyEnum.nullable().optional(),
 });
 
 export const updateLocationSchema = createLocationSchema.partial().extend({
@@ -262,6 +273,9 @@ export const createVarietySchema = z.object({
   name: z.string().min(1),
   plantType: plantTypeEnum,
   lineageParentIds: z.array(z.string()).optional(),
+  daysToMaturity: z.number().int().positive().max(1000).optional(),
+  dtmFrom: dtmFromEnum.optional(),
+  cropFamily: cropFamilyEnum.nullable().optional(),
   notes: z.string().optional(),
 });
 

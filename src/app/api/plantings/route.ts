@@ -12,6 +12,9 @@ import {
 } from "@/lib/ownership";
 import { serializePlanting } from "@/lib/serializers";
 import { createPlantingSchema } from "@/lib/validators";
+import { guessCropFamily } from "@/lib/crops/family";
+
+const DAY_MS = 86_400_000;
 
 export async function GET(request: Request) {
   const { org, response } = await requireOrg();
@@ -54,6 +57,19 @@ export async function POST(request: Request) {
 
     const id = nanoid();
 
+    const sownAt = data.sownAt ? new Date(data.sownAt) : null;
+    const transplantedAt = data.transplantedAt
+      ? new Date(data.transplantedAt)
+      : null;
+    const cropFamily = data.cropFamily ?? guessCropFamily(data.commonName);
+    // Derive the expected harvest from the maturity clock unless one was passed.
+    const anchor = sownAt ?? transplantedAt;
+    const expectedHarvestAt = data.expectedHarvestAt
+      ? new Date(data.expectedHarvestAt)
+      : anchor && data.daysToMaturity
+        ? new Date(anchor.getTime() + data.daysToMaturity * DAY_MS)
+        : null;
+
     await db.insert(plantings).values({
       id,
       orgId: org.id,
@@ -66,6 +82,11 @@ export async function POST(request: Request) {
       source: data.source ?? null,
       seasonId: data.seasonId ?? null,
       parentPlantingId: data.parentPlantingId ?? null,
+      sownAt,
+      transplantedAt,
+      expectedHarvestAt,
+      daysToMaturity: data.daysToMaturity ?? null,
+      cropFamily,
     });
 
     const row = await db.query.plantings.findFirst({

@@ -9,6 +9,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 import { LOCATION_TYPE_VALUES } from "../lib/locations/catalog";
+import { CROP_FAMILY_VALUES } from "../lib/crops/family";
 
 export const users = sqliteTable("users", {
   id: text("id").primaryKey(),
@@ -105,6 +106,32 @@ export const sessions = sqliteTable(
   (table) => [index("sessions_user_id_idx").on(table.userId)],
 );
 
+// Long-lived personal access tokens for read-only API access from outside the
+// browser (e.g. loading a farm's GeoJSON as a layer in QGIS). Scoped to one org;
+// only the SHA-256 hash is stored, so the raw token is shown once at creation.
+export const apiTokens = sqliteTable(
+  "api_tokens",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    userId: text("user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    // SHA-256 (hex) of the raw token; we never store the token itself.
+    tokenHash: text("token_hash").notNull().unique(),
+    // First chars of the raw token, kept for display ("plot_a1b2c3…").
+    prefix: text("prefix").notNull(),
+    lastUsedAt: integer("last_used_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [index("api_tokens_org_id_idx").on(table.orgId)],
+);
+
 export const locations = sqliteTable(
   "locations",
   {
@@ -150,6 +177,12 @@ export const varieties = sqliteTable(
       enum: ["crop", "flower", "tree", "breeding_line"],
     }).notNull(),
     lineageParentIds: text("lineage_parent_ids"),
+    // Agronomy reference, entered once and reused: days-to-maturity (and whether
+    // that clock starts at sow or transplant) lets a planting auto-compute its
+    // expected harvest; cropFamily backs rotation/disease-break reasoning.
+    daysToMaturity: integer("days_to_maturity"),
+    dtmFrom: text("dtm_from", { enum: ["sow", "transplant"] }),
+    cropFamily: text("crop_family", { enum: CROP_FAMILY_VALUES }),
     notes: text("notes"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
@@ -219,6 +252,16 @@ export const plantings = sqliteTable(
       onDelete: "set null",
     }),
     parentPlantingId: text("parent_planting_id"),
+    // Real lifecycle dates (distinct from createdAt = when the record was
+    // entered). sownAt/transplantedAt anchor the maturity clock; expectedHarvestAt
+    // = anchor + daysToMaturity drives the "what's ready" view; closedAt is set
+    // when a terminal harvest/seed-save advances status to "harvested".
+    sownAt: integer("sown_at", { mode: "timestamp_ms" }),
+    transplantedAt: integer("transplanted_at", { mode: "timestamp_ms" }),
+    expectedHarvestAt: integer("expected_harvest_at", { mode: "timestamp_ms" }),
+    closedAt: integer("closed_at", { mode: "timestamp_ms" }),
+    daysToMaturity: integer("days_to_maturity"),
+    cropFamily: text("crop_family", { enum: CROP_FAMILY_VALUES }),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -227,6 +270,7 @@ export const plantings = sqliteTable(
     index("plantings_user_id_idx").on(table.userId),
     index("plantings_location_id_idx").on(table.locationId),
     index("plantings_variety_id_idx").on(table.varietyId),
+    index("plantings_parent_planting_id_idx").on(table.parentPlantingId),
   ],
 );
 
@@ -622,6 +666,13 @@ export const plantingsRelations = relations(plantings, ({ one, many }) => ({
     fields: [plantings.seasonId],
     references: [seasons.id],
   }),
+  // Succession/breeding lineage: a planting can descend from a parent planting.
+  parent: one(plantings, {
+    fields: [plantings.parentPlantingId],
+    references: [plantings.id],
+    relationName: "planting_parent",
+  }),
+  children: many(plantings, { relationName: "planting_parent" }),
   events: many(events),
 }));
 
