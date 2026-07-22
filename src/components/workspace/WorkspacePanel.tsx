@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/Field";
 import { useToast } from "@/components/ui/toast/ToastProvider";
 import { apiFetch, getErrorMessage } from "@/lib/client";
 import type {
+  ApiTokenRecord,
   MemberRecord,
   OrganizationRecord,
   OrgRole,
@@ -39,8 +40,66 @@ export default function WorkspacePanel({ onClose }: WorkspacePanelProps) {
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member");
   const [newOrgName, setNewOrgName] = useState("");
   const [creating, setCreating] = useState(false);
+  const [tokens, setTokens] = useState<ApiTokenRecord[]>([]);
+  const [tokenName, setTokenName] = useState("");
+  const [minted, setMinted] = useState<{ name: string; token: string } | null>(null);
+  const [copied, setCopied] = useState<string | null>(null);
 
   const canManage = myRole === "owner" || myRole === "admin";
+  const origin = typeof window !== "undefined" ? window.location.origin : "";
+
+  async function copy(text: string, key: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      setTimeout(() => setCopied((k) => (k === key ? null : k)), 1500);
+    } catch {
+      // clipboard blocked — ignore
+    }
+  }
+
+  async function createToken(e: React.FormEvent) {
+    e.preventDefault();
+    if (!tokenName.trim()) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const data = await apiFetch<{ name: string; token: string }>("/api/tokens", {
+        method: "POST",
+        body: { name: tokenName.trim() },
+      });
+      setMinted({ name: data.name, token: data.token });
+      setTokenName("");
+      await loadTokens();
+      toast.success("Access token created");
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't create the token.");
+      setError(message);
+      toast.error("Couldn't create token", { description: message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function revokeToken(id: string) {
+    setBusy(true);
+    try {
+      await apiFetch(`/api/tokens/${id}`, { method: "DELETE" });
+      await loadTokens();
+      toast.success("Token revoked");
+    } catch (err) {
+      const message = getErrorMessage(err, "Couldn't revoke the token.");
+      setError(message);
+      toast.error("Couldn't revoke token", { description: message });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const loadTokens = useCallback(async () => {
+    const data = await apiFetch<{ tokens: ApiTokenRecord[] }>("/api/tokens");
+    setTokens(data.tokens);
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -48,6 +107,7 @@ export default function WorkspacePanel({ onClose }: WorkspacePanelProps) {
       const [orgsData, membersData] = await Promise.all([
         apiFetch<{ organizations: OrganizationRecord[]; activeOrgId: string | null }>("/api/orgs"),
         apiFetch<{ members: MemberRecord[]; invites: PendingInviteRecord[]; role: OrgRole }>("/api/orgs/members"),
+        loadTokens(),
       ]);
       setOrgs(orgsData.organizations);
       setActiveOrgId(orgsData.activeOrgId);
@@ -57,7 +117,7 @@ export default function WorkspacePanel({ onClose }: WorkspacePanelProps) {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [loadTokens]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -363,6 +423,108 @@ export default function WorkspacePanel({ onClose }: WorkspacePanelProps) {
 
             {notice && <p className="mt-2 text-sm text-emerald-700">{notice}</p>}
             {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
+          </section>
+
+          {/* Maps & GIS — read-only GeoJSON export for QGIS etc. */}
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-stone-400">
+              Maps &amp; GIS (QGIS)
+            </h3>
+            <p className="mt-1 text-xs leading-relaxed text-stone-500">
+              Load this workspace&apos;s map as a live GeoJSON layer in QGIS or any GIS
+              tool. In QGIS: <span className="font-medium">Layer → Add Layer → Add Vector
+              Layer → Protocol: HTTP(S)</span>, paste a URL below, and add the header{" "}
+              <code className="rounded bg-stone-100 px-1">Authorization: Bearer …</code> with
+              an access token (or append <code className="rounded bg-stone-100 px-1">?token=…</code>).
+            </p>
+
+            <div className="mt-2 space-y-1.5">
+              {[
+                { label: "Locations", path: "/api/export/locations.geojson" },
+                { label: "Paddocks", path: "/api/export/paddocks.geojson" },
+              ].map((row) => {
+                const url = `${origin}${row.path}`;
+                return (
+                  <div
+                    key={row.path}
+                    className="flex items-center gap-2 rounded-xl border border-stone-100 px-3 py-2"
+                  >
+                    <span className="w-16 shrink-0 text-xs font-medium text-stone-600">
+                      {row.label}
+                    </span>
+                    <code className="min-w-0 flex-1 truncate text-xs text-stone-500">{url}</code>
+                    <button
+                      type="button"
+                      onClick={() => copy(url, row.path)}
+                      aria-label={`Copy ${row.label} URL`}
+                      className="shrink-0 rounded-lg p-1 text-stone-400 active:text-emerald-600"
+                    >
+                      <Icon name={copied === row.path ? "check" : "copy"} size={15} />
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Just-minted token — shown once. */}
+            {minted && (
+              <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+                <p className="text-xs font-medium text-emerald-900">
+                  Token “{minted.name}” created — copy it now, you won&apos;t see it again.
+                </p>
+                <div className="mt-1.5 flex items-center gap-2">
+                  <code className="min-w-0 flex-1 truncate rounded-lg bg-white px-2 py-1.5 text-xs text-stone-700">
+                    {minted.token}
+                  </code>
+                  <Button size="sm" onClick={() => copy(minted.token, "minted")}>
+                    {copied === "minted" ? "Copied" : "Copy"}
+                  </Button>
+                </div>
+              </div>
+            )}
+
+            {/* Existing tokens */}
+            {tokens.length > 0 && (
+              <ul className="mt-2 space-y-1.5">
+                {tokens.map((t) => (
+                  <li
+                    key={t.id}
+                    className="flex items-center gap-2 rounded-xl border border-stone-100 px-3 py-2"
+                  >
+                    <span className="min-w-0 flex-1">
+                      <span className="block truncate text-sm text-stone-700">{t.name}</span>
+                      <span className="block text-xs text-stone-400">
+                        {t.prefix}… ·{" "}
+                        {t.lastUsedAt
+                          ? `last used ${new Date(t.lastUsedAt).toLocaleDateString()}`
+                          : "never used"}
+                      </span>
+                    </span>
+                    <button
+                      type="button"
+                      aria-label={`Revoke ${t.name}`}
+                      disabled={busy}
+                      onClick={() => revokeToken(t.id)}
+                      className="shrink-0 rounded-lg p-1 text-stone-400 active:text-red-600"
+                    >
+                      <Icon name="x" size={16} />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            <form onSubmit={createToken} className="mt-3 flex gap-2">
+              <Input
+                value={tokenName}
+                onChange={(e) => setTokenName(e.target.value)}
+                placeholder="Token name (e.g. QGIS laptop)"
+                className="flex-1"
+              />
+              <Button type="submit" leftIcon="plus" loading={busy} disabled={!tokenName.trim()}>
+                Create
+              </Button>
+            </form>
           </section>
         </div>
       )}

@@ -21,6 +21,7 @@ import {
   paddocks,
   plantings,
 } from "@/db/schema";
+import { buildCropSnapshot } from "@/lib/crops/status";
 import { applyHerdMove, HerdMoveError } from "@/lib/grazing/move";
 import { buildGrazingSnapshot } from "@/lib/grazing/status";
 import { resolveParse } from "@/lib/parse/resolve";
@@ -30,6 +31,7 @@ import {
   type ResolvedParse,
 } from "@/lib/parse/schema";
 import {
+  serializeEvent,
   serializeGrazingEvent,
   serializeHerd,
   serializeLocation,
@@ -363,6 +365,102 @@ const queryGrazing: ReadTool = {
   },
 };
 
+// --- query_harvest_window (read) -------------------------------------------
+// The crops counterpart to query_grazing: which plantings are ready (or being
+// harvested) now, and when each is expected, computed the same deterministic
+// way the readiness snapshot does (sownAt + days-to-maturity).
+const queryHarvestWindow: ReadTool = {
+  name: "query_harvest_window",
+  kind: "read",
+  def: {
+    type: "function",
+    function: {
+      name: "query_harvest_window",
+      description:
+        "Look up what crops are ready or coming ready: each active planting's " +
+        "maturity status (growing, ready, harvesting, done) and expected harvest " +
+        "date. Call this before answering 'what's ready this week?', planning a " +
+        "harvest, or recommending what to pick.",
+      parameters: {
+        type: "object",
+        properties: {
+          locationName: {
+            type: "string",
+            description: "Filter to plantings at a matching named area. Omit for all.",
+          },
+          withinDays: {
+            type: "number",
+            description:
+              "Only list plantings expected within this many days (e.g. 7 for " +
+              "'this week'). Omit to list all that are growing or ready.",
+          },
+        },
+      },
+    },
+  },
+  async run(args, ctx) {
+    const [plantingRows, locationRows, eventRows] = await Promise.all([
+      db.query.plantings.findMany({ where: eq(plantings.orgId, ctx.orgId) }),
+      db.query.locations.findMany({ where: eq(locations.orgId, ctx.orgId) }),
+      db.query.events.findMany({ where: eq(events.orgId, ctx.orgId) }),
+    ]);
+    const snapshot = buildCropSnapshot(
+      plantingRows.map(serializePlanting),
+      locationRows.map(serializeLocation),
+      eventRows.map(serializeEvent),
+    );
+
+    const locationFilter =
+      typeof args.locationName === "string"
+        ? args.locationName.toLowerCase().trim()
+        : null;
+    const withinDays =
+      typeof args.withinDays === "number" ? args.withinDays : null;
+
+    // "done" plantings are out of scope for a forward-looking harvest view.
+    let states = snapshot.plantings.filter((s) => s.status !== "done");
+    if (locationFilter) {
+      states = states.filter((s) =>
+        (s.locationName ?? "").toLowerCase().includes(locationFilter),
+      );
+    }
+    if (withinDays != null) {
+      states = states.filter(
+        (s) => s.daysToHarvest != null && s.daysToHarvest <= withinDays,
+      );
+    }
+
+    if (states.length === 0) {
+      return withinDays != null
+        ? `Nothing is expected to be ready within ${withinDays} days.`
+        : "No active plantings to report on.";
+    }
+
+    const lines = states.map((s) => {
+      const where = s.locationName ? ` at ${s.locationName}` : "";
+      const crop = [s.commonName, s.variety].filter(Boolean).join(" ");
+      let timing = "";
+      if (s.status === "harvesting") {
+        timing = " — harvesting now";
+      } else if (s.daysToHarvest != null) {
+        timing =
+          s.daysToHarvest <= 0
+            ? ` — due ${-s.daysToHarvest} day${s.daysToHarvest === 0 ? "" : "s"} ago`
+            : ` — in ${s.daysToHarvest} day${s.daysToHarvest === 1 ? "" : "s"} (${shortDate(new Date(s.expectedHarvestAt!))})`;
+      } else {
+        timing = " — no expected date yet";
+      }
+      return `- ${crop}${where} [${s.status}]${timing}`;
+    });
+
+    const readyCount = snapshot.readyNow.length;
+    return [
+      `${states.length} planting(s)${readyCount ? `, ${readyCount} ready/harvesting now` : ""}:`,
+      lines.join("\n"),
+    ].join("\n");
+  },
+};
+
 // --- move_herd (action) ----------------------------------------------------
 // Executes a rotation move immediately (closing the open period, opening a new
 // one on the destination) and hands the chat an Undo. This mirrors the map's
@@ -522,6 +620,7 @@ export const AGENT_TOOLS: AgentTool[] = [
   logActivity,
   queryActivity,
   queryGrazing,
+  queryHarvestWindow,
   moveHerd,
 ];
 

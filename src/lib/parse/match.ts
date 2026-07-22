@@ -11,8 +11,12 @@ function scoreMatch(query: string, candidate: string) {
   if (!q || !c) return 0;
   if (c === q) return 1;
   if (c.includes(q) || q.includes(c)) return 0.85;
+  // Whole-token overlap, NOT substring: a query token "2" must equal a candidate
+  // token, so "bed 2" no longer scores a perfect match against "bed 12" (whose
+  // "12" contains "2"). This was silently routing logs to the wrong bed.
   const qTokens = q.split(" ");
-  const matches = qTokens.filter((token) => c.includes(token)).length;
+  const cTokens = new Set(c.split(" "));
+  const matches = qTokens.filter((token) => cTokens.has(token)).length;
   return matches / qTokens.length;
 }
 

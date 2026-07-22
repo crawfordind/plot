@@ -49,6 +49,29 @@ export async function PATCH(request: Request, { params }: Params) {
         ...(data.parentPlantingId !== undefined
           ? { parentPlantingId: data.parentPlantingId ?? null }
           : {}),
+        ...(data.sownAt !== undefined
+          ? { sownAt: data.sownAt ? new Date(data.sownAt) : null }
+          : {}),
+        ...(data.transplantedAt !== undefined
+          ? {
+              transplantedAt: data.transplantedAt
+                ? new Date(data.transplantedAt)
+                : null,
+            }
+          : {}),
+        ...(data.expectedHarvestAt !== undefined
+          ? {
+              expectedHarvestAt: data.expectedHarvestAt
+                ? new Date(data.expectedHarvestAt)
+                : null,
+            }
+          : {}),
+        ...(data.daysToMaturity !== undefined
+          ? { daysToMaturity: data.daysToMaturity ?? null }
+          : {}),
+        ...(data.cropFamily !== undefined
+          ? { cropFamily: data.cropFamily ?? null }
+          : {}),
       })
       .where(eq(plantings.id, id));
 

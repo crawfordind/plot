@@ -80,6 +80,12 @@ export const confirmLogSchema = z.object({
   unit: z.string().optional(),
   amount: z.number().optional(),
   notes: z.string().optional(),
+  // Optional season to attach a newly-created planting to; the route falls back
+  // to the org's current active season when omitted.
+  seasonId: z.string().optional(),
+  // Marks a harvest (or seed_save) as the planting's terminal event, so the
+  // route advances the planting to "harvested" and stamps closedAt.
+  isFinal: z.boolean().optional(),
   createPlanting: z
     .object({
       locationId: z.string(),

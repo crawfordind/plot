@@ -123,6 +123,30 @@ export function buildCoachSnapshot(
   }
 
   const activePlantings = plantings.filter((p) => p.status === "active");
+
+  // What's coming ready: active plantings whose expected harvest falls within
+  // the next week (or is just overdue). Mirrors the crop readiness snapshot;
+  // surfaced here so the dashboard answers "what do I pick this week?".
+  const readyCutoff = new Date(now);
+  readyCutoff.setDate(readyCutoff.getDate() + 7);
+  const readySoon = activePlantings
+    .filter((p) => p.expectedHarvestAt && new Date(p.expectedHarvestAt) <= readyCutoff)
+    .sort(
+      (a, b) =>
+        new Date(a.expectedHarvestAt!).getTime() -
+        new Date(b.expectedHarvestAt!).getTime(),
+    );
+  if (readySoon.length > 0) {
+    const names = readySoon.slice(0, 2).map((p) => p.commonName).join(", ");
+    const more = readySoon.length > 2 ? ` +${readySoon.length - 2} more` : "";
+    insights.push({
+      id: "prompt-ready",
+      kind: "prompt",
+      message: `Ready to harvest soon: ${names}${more} — log the pick to build yield history.`,
+      logStarter: `Harvested ${readySoon[0].commonName} — `,
+    });
+  }
+
   const withoutRecentActivity = activePlantings.filter((planting) => {
     const plantingEvents = events.filter(
       (event) =>

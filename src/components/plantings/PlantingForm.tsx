@@ -56,6 +56,13 @@ export default function PlantingForm({
   const [varietyId, setVarietyId] = useState<string | null>(null);
   const [seasonId, setSeasonId] = useState<string | null>(null);
   const [source, setSource] = useState("");
+  // Default the sow date to today (local), so the maturity clock starts honestly
+  // rather than at record-entry time. Cleared → no date sent.
+  const [sownAt, setSownAt] = useState(() => {
+    const d = new Date();
+    const off = d.getTimezoneOffset() * 60_000;
+    return new Date(d.getTime() - off).toISOString().slice(0, 10);
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -75,6 +82,7 @@ export default function PlantingForm({
           varietyId: varietyId ?? undefined,
           seasonId: seasonId ?? undefined,
           source: source || undefined,
+          sownAt: sownAt || undefined,
         },
       });
 
@@ -148,6 +156,17 @@ export default function PlantingForm({
               />
             </Field>
           </div>
+
+          <Field
+            label="Sown"
+            hint="When seed went in (anchors the maturity clock). Clear if unknown."
+          >
+            <Input
+              type="date"
+              value={sownAt}
+              onChange={(e) => setSownAt(e.target.value)}
+            />
+          </Field>
 
           <VarietyPicker
             varieties={varieties}
