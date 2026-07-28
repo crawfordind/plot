@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import "./welcome.css";
 
-const GITHUB_URL = "https://github.com/CannaEngineer/Plot";
+const GITHUB_URL = "https://github.com/crawfordind/plot";
 // "Get started" points at the app's own entry. Swap for a hosted-app or
 // waitlist URL when one exists.
 const APP_URL = "/register";
