@@ -1,19 +1,26 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const publicPaths = ["/login", "/register"];
+// Reachable without a session. `/welcome` is the marketing landing page.
+const publicPaths = ["/login", "/register", "/welcome"];
+// Auth pages a signed-in user should be bounced away from (not the landing page).
+const authPaths = ["/login", "/register"];
 
 export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const session = request.cookies.get("plot_session")?.value;
   const isPublic = publicPaths.some((path) => pathname.startsWith(path));
+  const isAuth = authPaths.some((path) => pathname.startsWith(path));
   const isApi = pathname.startsWith("/api");
+  // The root is the public homepage: it renders the marketing landing for
+  // anonymous visitors and the app for signed-in users (see src/app/page.tsx).
+  const isRoot = pathname === "/";
 
-  if (!session && !isPublic && !isApi) {
+  if (!session && !isPublic && !isApi && !isRoot) {
     return NextResponse.redirect(new URL("/login", request.url));
   }
 
-  if (session && isPublic) {
+  if (session && isAuth) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
