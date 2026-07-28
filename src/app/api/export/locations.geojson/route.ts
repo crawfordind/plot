@@ -8,8 +8,9 @@ import { featureCollection, geojsonResponse } from "@/lib/geojson";
 // FeatureCollection (EPSG:4326), ready to load in QGIS as a vector layer. Auth is
 // a personal access token (Authorization: Bearer … or ?token=…) or a session.
 export async function GET(request: Request) {
-  const { orgId, response } = await requireExportAuth(request);
-  if (!orgId) return response;
+  const auth = await requireExportAuth(request);
+  if (auth.response) return auth.response;
+  const { orgId } = auth;
 
   try {
     const rows = await db.query.locations.findMany({

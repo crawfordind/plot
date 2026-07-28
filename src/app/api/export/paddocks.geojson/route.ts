@@ -9,8 +9,9 @@ import { featureCollection, geojsonResponse } from "@/lib/geojson";
 // geometry so they're available for analysis in QGIS. Geometry lives on the
 // linked location row; the paddock row holds the agronomy.
 export async function GET(request: Request) {
-  const { orgId, response } = await requireExportAuth(request);
-  if (!orgId) return response;
+  const auth = await requireExportAuth(request);
+  if (auth.response) return auth.response;
+  const { orgId } = auth;
 
   try {
     const [paddockRows, locationRows] = await Promise.all([
