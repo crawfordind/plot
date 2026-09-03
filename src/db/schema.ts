@@ -29,6 +29,12 @@ export const organizations = sqliteTable("organizations", {
   createdByUserId: text("created_by_user_id").references(() => users.id, {
     onDelete: "set null",
   }),
+  // Display unit for tree/tube heights. Storage is always centimetres (see
+  // lib/tags/units.ts); this only decides what the field UI shows and steps by,
+  // so switching it is a preference change, never a data migration.
+  heightUnit: text("height_unit", { enum: ["cm", "in"] })
+    .notNull()
+    .default("cm"),
   createdAt: integer("created_at", { mode: "timestamp_ms" })
     .notNull()
     .default(sql`(unixepoch() * 1000)`),
@@ -302,6 +308,7 @@ export const events = sqliteTable(
         "seed_save",
         "sale",
         "cost",
+        "visit",
         "other",
       ],
     }).notNull(),
@@ -314,6 +321,25 @@ export const events = sqliteTable(
     weatherSnapshot: text("weather_snapshot"),
     gpsPoint: text("gps_point"),
     notes: text("notes"),
+    // ─── Visit fields (type = "visit") ──────────────────────────────────────
+    // A tube check is just an event, so the Records panel, NL parser and CSV
+    // export pick these up without a parallel store. All nullable: every other
+    // event type leaves them empty.
+    survival: text("survival", { enum: ["alive", "dead", "missing"] }),
+    // Always centimetres on disk regardless of the org's display unit.
+    heightCm: real("height_cm"),
+    caliperMm: real("caliper_mm"),
+    // Where the height was read from, so two crews' numbers stay comparable.
+    heightRef: text("height_ref", {
+      enum: ["inside", "at_tube_top", "above_tube"],
+    }),
+    // JSON string[]: "browse" | "rodent" | "insect" | "tube_down".
+    damage: text("damage"),
+    tubeCondition: text("tube_condition", {
+      enum: ["intact", "loose", "down", "removed"],
+    }),
+    // Set when this visit recorded a replant: the planting that took over.
+    replacedById: text("replaced_by_id"),
     createdAt: integer("created_at", { mode: "timestamp_ms" })
       .notNull()
       .default(sql`(unixepoch() * 1000)`),
@@ -564,6 +590,145 @@ export const photoInsights = sqliteTable(
   (table) => [index("photo_insights_org_id_idx").on(table.orgId)],
 );
 
+// ─── NFC / QR tags ──────────────────────────────────────────────────────────
+// A physical tag zip-tied to a tree tube. The one rule: THE TAG IS A POINTER,
+// NEVER THE RECORD. Plot mints `tagCode` and owns the history; a tag can be
+// replaced, aliased, duplicated by a printed QR, or fail outright without
+// touching a single logged visit. The chip's factory UID is kept only as a
+// tamper check — it is never the lookup key, because UID cloning is trivial and
+// some readers won't expose it at all.
+export const tags = sqliteTable(
+  "tags",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    // The opaque 8-char code in the tag's URL (https://<host>/t/<tagCode>).
+    // Carries no farm data, so a tag found on the ground leaks nothing.
+    tagCode: text("tag_code").notNull().unique(),
+    chipUid: text("chip_uid"),
+    kind: text("kind", { enum: ["nfc", "qr", "both"] })
+      .notNull()
+      .default("nfc"),
+    // What one tap means: a single tube, a whole row, or a whole block. The
+    // crew picks per tag; the farm sets the default.
+    scope: text("scope", { enum: ["tube", "row", "block"] })
+      .notNull()
+      .default("tube"),
+    locationId: text("location_id")
+      .notNull()
+      .references(() => locations.id, { onDelete: "cascade" }),
+    plantingId: text("planting_id").references(() => plantings.id, {
+      onDelete: "set null",
+    }),
+    status: text("status", {
+      enum: ["active", "lost", "retired", "unbound"],
+    })
+      .notNull()
+      .default("active"),
+    // Replacement chain. A fresh tag written for a lost one points back here, so
+    // if the old tag ever reads again it still resolves to the same record.
+    aliasOfTagId: text("alias_of_tag_id").references(
+      (): AnySQLiteColumn => tags.id,
+      { onDelete: "set null" },
+    ),
+    // The GPS fix at the moment of writing — identity and position are the same
+    // event when a tag is encoded in the field.
+    writtenLat: real("written_lat"),
+    writtenLng: real("written_lng"),
+    writtenBy: text("written_by").references(() => users.id, {
+      onDelete: "set null",
+    }),
+    writtenAt: integer("written_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+    // Silence is the alarm: a tube that stops being scanned is a failing tag,
+    // and this is what the health report sorts on.
+    lastReadAt: integer("last_read_at", { mode: "timestamp_ms" }),
+    createdAt: integer("created_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("tags_org_id_idx").on(table.orgId),
+    index("tags_location_id_idx").on(table.locationId),
+    index("tags_last_read_at_idx").on(table.lastReadAt),
+  ],
+);
+
+// One row per scan. Append-only: it is both the audit trail and the evidence
+// that a tube was actually walked, which is what makes the silent-tag report
+// trustworthy.
+export const tagReads = sqliteTable(
+  "tag_reads",
+  {
+    id: text("id").primaryKey(),
+    orgId: text("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    tagId: text("tag_id")
+      .notNull()
+      .references(() => tags.id, { onDelete: "cascade" }),
+    userId: text("user_id").references(() => users.id, { onDelete: "set null" }),
+    // 'manual' is someone typing the printed code — paper survives radio.
+    readVia: text("read_via", { enum: ["nfc", "qr", "manual"] })
+      .notNull()
+      .default("nfc"),
+    lat: real("lat"),
+    lng: real("lng"),
+    // The visit this scan produced, when it produced one.
+    eventId: text("event_id").references(() => events.id, {
+      onDelete: "set null",
+    }),
+    readAt: integer("read_at", { mode: "timestamp_ms" })
+      .notNull()
+      .default(sql`(unixepoch() * 1000)`),
+  },
+  (table) => [
+    index("tag_reads_tag_id_idx").on(table.tagId),
+    index("tag_reads_org_id_idx").on(table.orgId),
+    index("tag_reads_read_at_idx").on(table.readAt),
+  ],
+);
+
+export const tagsRelations = relations(tags, ({ one, many }) => ({
+  org: one(organizations, {
+    fields: [tags.orgId],
+    references: [organizations.id],
+  }),
+  location: one(locations, {
+    fields: [tags.locationId],
+    references: [locations.id],
+  }),
+  planting: one(plantings, {
+    fields: [tags.plantingId],
+    references: [plantings.id],
+  }),
+  aliasOf: one(tags, {
+    fields: [tags.aliasOfTagId],
+    references: [tags.id],
+    relationName: "tag_alias",
+  }),
+  aliases: many(tags, { relationName: "tag_alias" }),
+  reads: many(tagReads),
+}));
+
+export const tagReadsRelations = relations(tagReads, ({ one }) => ({
+  tag: one(tags, {
+    fields: [tagReads.tagId],
+    references: [tags.id],
+  }),
+  user: one(users, {
+    fields: [tagReads.userId],
+    references: [users.id],
+  }),
+  event: one(events, {
+    fields: [tagReads.eventId],
+    references: [events.id],
+  }),
+}));
+
 export const usersRelations = relations(users, ({ many }) => ({
   sessions: many(sessions),
   memberships: many(memberships),
@@ -625,6 +790,7 @@ export const locationsRelations = relations(locations, ({ one, many }) => ({
   }),
   grazingEvents: many(grazingEvents),
   attachments: many(attachments),
+  tags: many(tags),
 }));
 
 export const attachmentsRelations = relations(attachments, ({ one }) => ({

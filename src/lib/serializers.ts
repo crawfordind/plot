@@ -1,4 +1,5 @@
 import type {
+  DamageKind,
   GeoJSONGeometry,
   PhotoInsightRecord,
   PhotoObservations,
@@ -14,6 +15,8 @@ import type {
   photoInsights,
   plantings,
   seasons,
+  tagReads,
+  tags,
   varieties,
 } from "@/db/schema";
 
@@ -28,6 +31,8 @@ type GrazingEventRow = typeof grazingEvents.$inferSelect;
 type VarietyRow = typeof varieties.$inferSelect;
 type CrossRow = typeof crosses.$inferSelect;
 type SeasonRow = typeof seasons.$inferSelect;
+type TagRow = typeof tags.$inferSelect;
+type TagReadRow = typeof tagReads.$inferSelect;
 
 export function serializeLocation(row: LocationRow) {
   return {
@@ -189,7 +194,45 @@ export function serializeEvent(row: EventRow) {
     unit: row.unit,
     amount: row.amount,
     notes: row.notes,
+    survival: row.survival,
+    heightCm: row.heightCm,
+    caliperMm: row.caliperMm,
+    heightRef: row.heightRef,
+    damage: parseJson<DamageKind[]>(row.damage, []),
+    tubeCondition: row.tubeCondition,
+    replacedById: row.replacedById,
     createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function serializeTag(row: TagRow) {
+  return {
+    id: row.id,
+    tagCode: row.tagCode,
+    chipUid: row.chipUid,
+    kind: row.kind,
+    scope: row.scope,
+    locationId: row.locationId,
+    plantingId: row.plantingId,
+    status: row.status,
+    aliasOfTagId: row.aliasOfTagId,
+    writtenLat: row.writtenLat,
+    writtenLng: row.writtenLng,
+    writtenAt: row.writtenAt.toISOString(),
+    lastReadAt: row.lastReadAt ? row.lastReadAt.toISOString() : null,
+    createdAt: row.createdAt.toISOString(),
+  };
+}
+
+export function serializeTagRead(row: TagReadRow) {
+  return {
+    id: row.id,
+    tagId: row.tagId,
+    readVia: row.readVia,
+    lat: row.lat,
+    lng: row.lng,
+    eventId: row.eventId,
+    readAt: row.readAt.toISOString(),
   };
 }
 

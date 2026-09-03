@@ -18,6 +18,7 @@ export type EventType =
   | "seed_save"
   | "sale"
   | "cost"
+  | "visit"
   | "other";
 export type SeasonStatus = "active" | "closed";
 
@@ -192,6 +193,11 @@ export type SeasonRecord = {
   createdAt: string;
 };
 
+export type Survival = "alive" | "dead" | "missing";
+export type HeightRef = "inside" | "at_tube_top" | "above_tube";
+export type DamageKind = "browse" | "rodent" | "insect" | "tube_down";
+export type TubeCondition = "intact" | "loose" | "down" | "removed";
+
 export type EventRecord = {
   id: string;
   plantingId: string | null;
@@ -202,6 +208,16 @@ export type EventRecord = {
   unit: string | null;
   amount: number | null;
   notes: string | null;
+  // Visit fields — populated when type === "visit", null otherwise.
+  // heightCm is centimetres on the wire as well as on disk; convert for display
+  // with lib/tags/units.ts using the org's heightUnit.
+  survival: Survival | null;
+  heightCm: number | null;
+  caliperMm: number | null;
+  heightRef: HeightRef | null;
+  damage: DamageKind[];
+  tubeCondition: TubeCondition | null;
+  replacedById: string | null;
   createdAt: string;
 };
 
@@ -251,3 +267,83 @@ export type GrazingEventRecord = {
 
 // Rotation state for a single paddock, derived (not stored).
 export type PaddockStatus = "grazing" | "ready" | "resting" | "idle";
+
+// ─── Tags ───────────────────────────────────────────────────────────────────
+
+// Display preference only — heights are stored and transmitted in centimetres.
+// See lib/tags/units.ts.
+export type HeightUnit = "cm" | "in";
+
+export type TagKind = "nfc" | "qr" | "both";
+export type TagScope = "tube" | "row" | "block";
+export type TagStatus = "active" | "lost" | "retired" | "unbound";
+export type TagReadVia = "nfc" | "qr" | "manual";
+
+export type TagRecord = {
+  id: string;
+  tagCode: string;
+  chipUid: string | null;
+  kind: TagKind;
+  scope: TagScope;
+  locationId: string;
+  plantingId: string | null;
+  status: TagStatus;
+  aliasOfTagId: string | null;
+  writtenLat: number | null;
+  writtenLng: number | null;
+  writtenAt: string;
+  lastReadAt: string | null;
+  createdAt: string;
+};
+
+export type TagReadRecord = {
+  id: string;
+  tagId: string;
+  readVia: TagReadVia;
+  lat: number | null;
+  lng: number | null;
+  eventId: string | null;
+  readAt: string;
+};
+
+// One point on the growth curve shown on the scan landing.
+export type GrowthPoint = {
+  occurredAt: string;
+  heightCm: number;
+};
+
+// Everything the scan landing needs, resolved in one round trip so a tap in a
+// field with one bar still paints a complete screen.
+export type TagResolution = {
+  tag: TagRecord;
+  location: LocationRecord;
+  planting: PlantingRecord | null;
+  // Most recent first.
+  recentVisits: EventRecord[];
+  growth: GrowthPoint[];
+  // Display unit for this farm; heights in this payload are still centimetres.
+  heightUnit: HeightUnit;
+};
+
+// What a 404 hands back instead of a dead end: the records near enough to be
+// what the crew is standing at, so a re-tag lands on the existing history.
+export type NearbyCandidate = {
+  location: LocationRecord;
+  meters: number | null;
+  // The tag already on this record, when it has one that stopped reading.
+  lastTagStatus: TagStatus | null;
+  lastReadAt: string | null;
+};
+
+// The Tag health screen's payload.
+export type TagHealthSummary = {
+  total: number;
+  readingFine: number;
+  silent: number;
+  lost: number;
+  silentAfterDays: number;
+  silentTags: {
+    tag: TagRecord;
+    locationName: string;
+  }[];
+};

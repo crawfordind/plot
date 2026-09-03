@@ -29,6 +29,8 @@ import WorkspacePanel from "@/components/workspace/WorkspacePanel";
 import PlantingEditSheet from "@/components/plantings/PlantingEditSheet";
 import PlantingForm from "@/components/plantings/PlantingForm";
 import StructureBuilder from "@/components/structure/StructureBuilder";
+import TagMode from "@/components/tags/TagMode";
+import TagScanSheet from "@/components/tags/TagScanSheet";
 import Button from "@/components/ui/Button";
 import Icon from "@/components/ui/Icon";
 import Tour, { type TourHandle } from "@/components/ui/Tour";
@@ -160,6 +162,11 @@ export default function MapShell({ userName }: MapShellProps) {
   } | null>(null);
   const [partsMode, setPartsMode] = useState(false);
   const [dropMode, setDropMode] = useState(false);
+  // Tag mode arms the NFC reader for a whole walk. `scannedTagCode` is set when
+  // a tag that already carries one of our codes reads — that's a visit, not a
+  // write, so it opens the scan landing instead of the bind sheet.
+  const [tagMode, setTagMode] = useState(false);
+  const [scannedTagCode, setScannedTagCode] = useState<string | null>(null);
   const [pendingCoords, setPendingCoords] = useState<[number, number] | null>(null);
   const [showRecords, setShowRecords] = useState(false);
   const [showEventForm, setShowEventForm] = useState(false);
@@ -411,6 +418,8 @@ export default function MapShell({ userName }: MapShellProps) {
     showWorkspace ||
     showNewFarm ||
     showChat ||
+    tagMode ||
+    !!scannedTagCode ||
     !!editingLocation ||
     !!editingPlanting ||
     !!editingEvent ||
@@ -923,8 +932,17 @@ export default function MapShell({ userName }: MapShellProps) {
         <MobileHeader
           userName={userName}
           dropMode={dropMode}
+          tagMode={tagMode}
           onToggleDropMode={() => {
             setDropMode((v) => !v);
+            setPendingCoords(null);
+            setLogCollapsed(true);
+          }}
+          onToggleTagMode={() => {
+            setTagMode((v) => !v);
+            // Tag mode owns the whole screen; nothing else should be competing
+            // for a gloved thumb while the reader is armed.
+            setDropMode(false);
             setPendingCoords(null);
             setLogCollapsed(true);
           }}
@@ -1382,6 +1400,48 @@ export default function MapShell({ userName }: MapShellProps) {
             setDropTargetId(null);
           }}
         />
+
+        {/* Field-encode. New tubes nest under the current farm, so a run walked
+            inside a block lands in that block's roll-up without anyone choosing
+            a parent per tag. */}
+        {tagMode && (
+          <TagMode
+            onClose={() => setTagMode(false)}
+            parentId={currentFarmId}
+            parentName={
+              locations.find((l) => l.id === currentFarmId)?.name ?? null
+            }
+            onTagWritten={() => {
+              void refreshData();
+            }}
+            onKnownTagScanned={(code) => {
+              // Already written and locked — this is a visit. Leave tag mode so
+              // the reader isn't fighting the landing screen for the radio.
+              setTagMode(false);
+              setScannedTagCode(code);
+            }}
+          />
+        )}
+
+        {scannedTagCode && (
+          <TagScanSheet
+            key={scannedTagCode}
+            tagCode={scannedTagCode}
+            crewName={userName}
+            farmName={locations.find((l) => l.id === currentFarmId)?.name ?? null}
+            position={mapCenter ? { lng: mapCenter[0], lat: mapCenter[1] } : null}
+            onClose={() => setScannedTagCode(null)}
+            onShowOnMap={(locationId) => selectLocationById(locationId)}
+            onVisitLogged={() => {
+              void refreshData();
+              setCoachRefreshKey((k) => k + 1);
+            }}
+            onClaimNew={() => {
+              setScannedTagCode(null);
+              setTagMode(true);
+            }}
+          />
+        )}
 
         {undo && (
           <UndoToast

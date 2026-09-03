@@ -10,6 +10,7 @@ import {
   paddocks,
   plantings,
   seasons,
+  tags,
   varieties,
 } from "@/db/schema";
 
@@ -73,6 +74,21 @@ export async function getOwnedCross(id: string, orgId: string) {
 export async function getOwnedSeason(id: string, orgId: string) {
   return db.query.seasons.findFirst({
     where: and(eq(seasons.id, id), eq(seasons.orgId, orgId)),
+  });
+}
+
+export async function getOwnedTag(id: string, orgId: string) {
+  return db.query.tags.findFirst({
+    where: and(eq(tags.id, id), eq(tags.orgId, orgId)),
+  });
+}
+
+// Resolve a scanned code within the caller's workspace. Scoping the lookup by
+// org is the whole security story for tags: a code minted by another farm
+// resolves as unknown here, never as someone else's tube.
+export async function getOwnedTagByCode(tagCode: string, orgId: string) {
+  return db.query.tags.findFirst({
+    where: and(eq(tags.tagCode, tagCode), eq(tags.orgId, orgId)),
   });
 }
 

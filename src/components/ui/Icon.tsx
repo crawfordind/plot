@@ -49,7 +49,8 @@ export type IconName =
   | "paperclip"
   | "file"
   | "copy"
-  | "pin";
+  | "pin"
+  | "nfc";
 
 const PATHS: Record<IconName, React.ReactNode> = {
   users: (
@@ -291,6 +292,16 @@ const PATHS: Record<IconName, React.ReactNode> = {
     <>
       <path d="M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6Z" />
       <path d="M12 14v7" />
+    </>
+  ),
+  // Radio waves leaving the phone toward the tag. Drawn for this feature — the
+  // set had no equivalent, and the universal NFC mark is the one thing a crew
+  // recognises before reading any label.
+  nfc: (
+    <>
+      <path d="M7 4.5a10 10 0 0 1 0 15" />
+      <path d="M11.5 7a6 6 0 0 1 0 10" />
+      <path d="M16 9.5a2.5 2.5 0 0 1 0 5" />
     </>
   ),
 };

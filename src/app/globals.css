@@ -152,6 +152,31 @@ textarea {
   }
 }
 
+/* NFC reader target. Web NFC gives no proximity feedback of its own, so the
+   expanding ring is the only thing telling a crew the reader is live and where
+   to hold the phone. Paired with a vibrate on read (see lib/tags/nfc.ts). */
+.nfc-ping {
+  animation: nfc-ping 1.8s ease-out infinite;
+}
+@keyframes nfc-ping {
+  0% {
+    transform: scale(0.7);
+    opacity: 0.55;
+  }
+  70%,
+  100% {
+    transform: scale(1.35);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nfc-ping {
+    animation: none;
+    opacity: 0.4;
+  }
+}
+
 /* Hide scrollbars on horizontally-scrolling chip/tab strips */
 .no-scrollbar {
   -ms-overflow-style: none;

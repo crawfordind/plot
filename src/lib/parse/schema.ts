@@ -11,6 +11,9 @@ export const eventTypeEnum = z.enum([
   "seed_save",
   "sale",
   "cost",
+  // A tube check dictated rather than tapped — the "Say it instead" button on
+  // the visit sheet hands off here.
+  "visit",
   "other",
 ]);
 
