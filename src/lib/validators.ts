@@ -63,6 +63,17 @@ export const renameOrgSchema = z.object({
   name: z.string().min(1).max(120),
 });
 
+// Workspace settings PATCH. Both fields optional so a caller can change either
+// the name or the field-display unit without restating the other.
+export const updateOrgSchema = z
+  .object({
+    name: z.string().min(1).max(120).optional(),
+    heightUnit: z.enum(["cm", "in"]).optional(),
+  })
+  .refine((v) => v.name !== undefined || v.heightUnit !== undefined, {
+    message: "Nothing to update",
+  });
+
 export const switchOrgSchema = z.object({
   orgId: z.string().min(1),
 });
@@ -157,29 +168,50 @@ export const batchGeometrySchema = z.object({
     .max(500),
 });
 
-export const createEventSchema = z.object({
-  plantingId: z.string().optional(),
-  locationId: z.string().optional(),
-  type: z.enum([
-    "sow",
-    "transplant",
-    "water",
-    "amend",
-    "observe",
-    "harvest",
-    "cross",
-    "seed_save",
-    "sale",
-    "cost",
-    "other",
-  ]),
-  occurredAt: isoDateTime.optional(),
-  quantity: z.number().optional(),
-  unit: z.string().optional(),
-  amount: z.number().optional(),
-  notes: z.string().optional(),
-  gpsPoint: geoPointSchema.optional(),
+export const survivalEnum = z.enum(["alive", "dead", "missing"]);
+export const heightRefEnum = z.enum(["inside", "at_tube_top", "above_tube"]);
+export const damageKindEnum = z.enum(["browse", "rodent", "insect", "tube_down"]);
+export const tubeConditionEnum = z.enum(["intact", "loose", "down", "removed"]);
+
+// Visit measurements, shared by createEvent and the tag visit route. Heights
+// arrive in centimetres — the client converts from the farm's display unit
+// before sending, so the wire format never depends on a preference.
+export const visitFieldsSchema = z.object({
+  survival: survivalEnum.optional(),
+  heightCm: z.number().finite().min(0).max(3000).optional(),
+  caliperMm: z.number().finite().min(0).max(2000).optional(),
+  heightRef: heightRefEnum.optional(),
+  damage: z.array(damageKindEnum).max(4).optional(),
+  tubeCondition: tubeConditionEnum.optional(),
+  replacedById: z.string().optional(),
 });
+
+export const createEventSchema = z
+  .object({
+    plantingId: z.string().optional(),
+    locationId: z.string().optional(),
+    type: z.enum([
+      "sow",
+      "transplant",
+      "water",
+      "amend",
+      "observe",
+      "harvest",
+      "cross",
+      "seed_save",
+      "sale",
+      "cost",
+      "visit",
+      "other",
+    ]),
+    occurredAt: isoDateTime.optional(),
+    quantity: z.number().optional(),
+    unit: z.string().optional(),
+    amount: z.number().optional(),
+    notes: z.string().optional(),
+    gpsPoint: geoPointSchema.optional(),
+  })
+  .extend(visitFieldsSchema.shape);
 
 export const updatePlantingSchema = createPlantingSchema
   .extend({
@@ -303,4 +335,98 @@ export const updateSeasonSchema = z.object({
   endsAt: isoDateTime.optional(),
   status: z.enum(["active", "closed"]).optional(),
   reviewSummary: z.string().nullable().optional(),
+});
+
+// ---- Tags ----
+
+export const tagKindEnum = z.enum(["nfc", "qr", "both"]);
+export const tagScopeEnum = z.enum(["tube", "row", "block"]);
+export const tagStatusEnum = z.enum(["active", "lost", "retired", "unbound"]);
+export const tagReadViaEnum = z.enum(["nfc", "qr", "manual"]);
+export const heightUnitEnum = z.enum(["cm", "in"]);
+
+// The device mints the code so writing a tag never waits on the server; the
+// unique index is what actually enforces it. Length and alphabet must match
+// lib/tags/code.ts.
+const tagCode = z
+  .string()
+  .regex(/^[2-9A-HJ-NP-Z]{8}$/, "Invalid tag code");
+
+// Bind a freshly written tag. `locationId` attaches it to an existing record;
+// omitting it creates a new location at `lat`/`lng` named `name`, which is the
+// field-encode happy path — identity and GPS fix become the same event.
+export const createTagSchema = z
+  .object({
+    tagCode,
+    chipUid: z.string().max(64).optional(),
+    kind: tagKindEnum.optional(),
+    scope: tagScopeEnum.optional(),
+    locationId: z.string().optional(),
+    // New-location fields, used when locationId is absent.
+    name: z.string().min(1).max(120).optional(),
+    parentId: z.string().optional(),
+    lat: z.number().finite().min(-90).max(90).optional(),
+    lng: z.number().finite().min(-180).max(180).optional(),
+    // Optional planting created alongside the tag (species + source stock).
+    planting: z
+      .object({
+        commonName: z.string().min(1).max(120),
+        variety: z.string().max(120).optional(),
+        source: z.string().max(200).optional(),
+        varietyId: z.string().optional(),
+      })
+      .optional(),
+  })
+  .refine((v) => v.locationId || (v.name && v.lat != null && v.lng != null), {
+    message:
+      "Provide either locationId, or name plus lat/lng to create a new location",
+  });
+
+// One scan. Sent singly on a live connection, or in a batch when a queue drains.
+export const tagReadSchema = z.object({
+  readVia: tagReadViaEnum.optional(),
+  lat: z.number().finite().min(-90).max(90).optional(),
+  lng: z.number().finite().min(-180).max(180).optional(),
+  eventId: z.string().optional(),
+  readAt: isoDateTime.optional(),
+});
+
+export const tagReadBatchSchema = z.object({
+  reads: z.array(tagReadSchema).min(1).max(200),
+});
+
+// Point a fresh tag at an existing record. Manager-only, and server-side: a
+// re-bind is never a re-write in the field, because the old tag was locked
+// read-only the moment it was written.
+export const rebindTagSchema = z.object({
+  // The new tag's code. It takes over, and the old row is retired behind an
+  // alias so the dead tag still resolves here if it ever reads again.
+  tagCode,
+  chipUid: z.string().max(64).optional(),
+  kind: tagKindEnum.optional(),
+  lat: z.number().finite().min(-90).max(90).optional(),
+  lng: z.number().finite().min(-180).max(180).optional(),
+});
+
+export const updateTagSchema = z.object({
+  status: tagStatusEnum.optional(),
+  scope: tagScopeEnum.optional(),
+  kind: tagKindEnum.optional(),
+  plantingId: z.string().nullable().optional(),
+});
+
+// A visit logged straight off a scan: the event plus the read that produced it,
+// in one request so a crew's tap is one round trip.
+export const tagVisitSchema = z
+  .object({
+    occurredAt: isoDateTime.optional(),
+    notes: z.string().max(2000).optional(),
+    readVia: tagReadViaEnum.optional(),
+    lat: z.number().finite().min(-90).max(90).optional(),
+    lng: z.number().finite().min(-180).max(180).optional(),
+  })
+  .extend(visitFieldsSchema.shape);
+
+export const setHeightUnitSchema = z.object({
+  heightUnit: heightUnitEnum,
 });

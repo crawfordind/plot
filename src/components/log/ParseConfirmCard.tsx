@@ -33,6 +33,7 @@ const eventTypes: { value: EventType; label: string }[] = [
   { value: "seed_save", label: "Save seed" },
   { value: "sale", label: "Sale" },
   { value: "cost", label: "Cost" },
+  { value: "visit", label: "Visit" },
   { value: "other", label: "Other" },
 ];
 

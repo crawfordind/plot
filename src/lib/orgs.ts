@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { db } from "@/db";
 import { memberships, orgInvites, organizations, users } from "@/db/schema";
 import type {
+  HeightUnit,
   MemberRecord,
   OrganizationRecord,
   OrgRole,
@@ -27,6 +28,15 @@ export async function createOrganization(
 
 export async function renameOrganization(orgId: string, name: string) {
   await db.update(organizations).set({ name }).where(eq(organizations.id, orgId));
+}
+
+// The unit field crews enter and read heights in. Display only: every height is
+// stored in centimetres, so switching this never rewrites or invalidates a row.
+export async function setOrgHeightUnit(orgId: string, heightUnit: HeightUnit) {
+  await db
+    .update(organizations)
+    .set({ heightUnit })
+    .where(eq(organizations.id, orgId));
 }
 
 export async function getMembership(orgId: string, userId: string) {

@@ -7,7 +7,9 @@ import Tooltip from "@/components/ui/Tooltip";
 type MobileHeaderProps = {
   userName: string | null;
   dropMode: boolean;
+  tagMode: boolean;
   onToggleDropMode: () => void;
+  onToggleTagMode: () => void;
   onOpenRecords: () => void;
   onOpenBuilder: () => void;
   onOpenGrazing: () => void;
@@ -96,7 +98,9 @@ function MenuRow({
 export default function MobileHeader({
   userName,
   dropMode,
+  tagMode,
   onToggleDropMode,
+  onToggleTagMode,
   onOpenRecords,
   onOpenBuilder,
   onOpenGrazing,
@@ -130,6 +134,14 @@ export default function MobileHeader({
           tooltip="Map your farm from a description"
           tour="build"
           onClick={onOpenBuilder}
+        />
+        <HeaderAction
+          icon="nfc"
+          label="Tag"
+          tooltip="Write an NFC tag onto a tube as you plant it"
+          tour="tag"
+          active={tagMode}
+          onClick={onToggleTagMode}
         />
         <HeaderAction
           icon="mapPin"

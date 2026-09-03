@@ -17,7 +17,13 @@ export function proxy(request: NextRequest) {
   const isRoot = pathname === "/";
 
   if (!session && !isPublic && !isApi && !isRoot) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    // Carry the intended destination through sign-in so the user lands where
+    // they were going. This is what makes a scanned tag work on a phone that
+    // isn't signed in: the tag's URL survives the detour and the crew comes back
+    // to the tube they're standing at, rather than the map's home view.
+    const login = new URL("/login", request.url);
+    login.searchParams.set("next", pathname + request.nextUrl.search);
+    return NextResponse.redirect(login);
   }
 
   if (session && isAuth) {
